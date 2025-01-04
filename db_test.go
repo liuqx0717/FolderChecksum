@@ -30,6 +30,15 @@ var testDbRows = [...]fileRow{
 		visited:  false,
 	},
 	{
+		// This means originally file2 was a file when creating the db,
+		// later when scanning the folder again, we find a new folder
+		// with the same name "file2".
+		path:     "file2/file1",
+		size:     123,
+		checksum: "bbb",
+		visited:  true,
+	},
+	{
 		// The name starts with special character '%' (sql wildcard)
 		path:     "%dir1/file1",
 		size:     456,
@@ -58,17 +67,25 @@ var testDbRows = [...]fileRow{
 		visited:  false,
 	},
 	{
+		// The name starts with special character '%', it also has
+		// prefix %dir1 but it's a different folder.
+		path:     "%dir123/file1",
+		size:     789,
+		checksum: "eee",
+		visited:  false,
+	},
+	{
 		// The name contains special characters \ _ " ' `
 		path:     "dir\\_2/dir1/\"'`file1",
 		size:     math.MaxUint32 * 10,
-		checksum: "eee",
+		checksum: "fff",
 		visited:  false,
 	},
 	{
 		// The name contains special characters \ _ " ' `
 		path:     "dir\\_2/dir1/\"'`file2",
 		size:     math.MaxUint32 * 10,
-		checksum: "fff",
+		checksum: "ggg",
 		visited:  true,
 	},
 }
@@ -283,6 +300,28 @@ func TestQueryFile(t *testing.T) {
 	}
 }
 
+func TestDeleteUnvisitedFile(t *testing.T) {
+	db := prepareTestDb(t)
+	defer db.Close()
+
+	var actualRows []fileRow
+	var expectRows []fileRow
+
+	insertRowsToFiles(t, db, testDbRows[:])
+	tx := mustCreateTx(db)
+	mustDeleteUnvisitedFile(tx, "file2")
+	mustCommitTx(tx)
+	actualRows = getAllRowsFromFiles(t, db)
+	expectRows = []fileRow{}
+	for _, row := range copyAndSortFileRows(testDbRows[:]) {
+		if row.path == "file2" {
+			continue
+		}
+		expectRows = append(expectRows, row)
+	}
+	verifyFileRows(t, actualRows, expectRows)
+}
+
 func TestQueryUnvisitedFiles(t *testing.T) {
 	db := prepareTestDb(t)
 	defer db.Close()
@@ -331,7 +370,7 @@ func TestQueryUnvisitedFiles(t *testing.T) {
 			checksum: "",
 		},
 	}
-	mustQueryUnvisitedFiles(tx, "%dir1", procOneFile)
+	mustQueryUnvisitedFiles(tx, "%dir1/", procOneFile)
 	verifyFileInfo(t, actual, expect)
 
 	// Query subfolder dir\_2.
@@ -340,16 +379,16 @@ func TestQueryUnvisitedFiles(t *testing.T) {
 		{
 			relPath:  "dir\\_2/dir1/\"'`file1",
 			size:     math.MaxUint32 * 10,
-			checksum: "eee",
+			checksum: "fff",
 		},
 	}
-	mustQueryUnvisitedFiles(tx, `dir\_2`, procOneFile)
+	mustQueryUnvisitedFiles(tx, `dir\_2/`, procOneFile)
 	verifyFileInfo(t, actual, expect)
 
 	// Query a non-existing folder.
 	actual = []fileInfo{}
 	expect = []fileInfo{}
-	mustQueryUnvisitedFiles(tx, "dirXXX", procOneFile)
+	mustQueryUnvisitedFiles(tx, "dirXXX/", procOneFile)
 	verifyFileInfo(t, actual, expect)
 
 	mustCommitTx(tx)
@@ -365,7 +404,7 @@ func TestDeleteUnvisitedFiles(t *testing.T) {
 	// Delete all unvisited files.
 	insertRowsToFiles(t, db, testDbRows[:])
 	tx := mustCreateTx(db)
-	mustDeleteUnvisitedFiles(tx, "", 4)
+	mustDeleteUnvisitedFiles(tx, "", 5)
 	mustCommitTx(tx)
 	actualRows = getAllRowsFromFiles(t, db)
 	expectRows = []fileRow{}
@@ -384,12 +423,12 @@ func TestDeleteUnvisitedFiles(t *testing.T) {
 	// Delete all unvisited files in %dir1.
 	insertRowsToFiles(t, db, testDbRows[:])
 	tx = mustCreateTx(db)
-	mustDeleteUnvisitedFiles(tx, "%dir1", 2)
+	mustDeleteUnvisitedFiles(tx, "%dir1/", 2)
 	mustCommitTx(tx)
 	actualRows = getAllRowsFromFiles(t, db)
 	expectRows = []fileRow{}
 	for _, row := range copyAndSortFileRows(testDbRows[:]) {
-		if strings.HasPrefix(row.path, "%dir1") && !row.visited {
+		if strings.HasPrefix(row.path, "%dir1/") && !row.visited {
 			continue
 		}
 		expectRows = append(expectRows, row)
@@ -403,12 +442,12 @@ func TestDeleteUnvisitedFiles(t *testing.T) {
 	// Delete all unvisited files in dir\_2.
 	insertRowsToFiles(t, db, testDbRows[:])
 	tx = mustCreateTx(db)
-	mustDeleteUnvisitedFiles(tx, `dir\_2`, 1)
+	mustDeleteUnvisitedFiles(tx, `dir\_2/`, 1)
 	mustCommitTx(tx)
 	actualRows = getAllRowsFromFiles(t, db)
 	expectRows = []fileRow{}
 	for _, row := range copyAndSortFileRows(testDbRows[:]) {
-		if strings.HasPrefix(row.path, `dir\_2`) && !row.visited {
+		if strings.HasPrefix(row.path, `dir\_2/`) && !row.visited {
 			continue
 		}
 		expectRows = append(expectRows, row)
@@ -422,7 +461,7 @@ func TestDeleteUnvisitedFiles(t *testing.T) {
 	// Delete all unvisited files in a non-existing folder.
 	insertRowsToFiles(t, db, testDbRows[:])
 	tx = mustCreateTx(db)
-	mustDeleteUnvisitedFiles(tx, `dirXXX`, 0)
+	mustDeleteUnvisitedFiles(tx, `dirXXX/`, 0)
 	mustCommitTx(tx)
 	actualRows = getAllRowsFromFiles(t, db)
 	expectRows = copyAndSortFileRows(testDbRows[:])

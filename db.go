@@ -181,8 +181,26 @@ func mustQueryFile(db *sql.DB, relPath string) any {
 	return ret
 }
 
+func mustDeleteUnvisitedFile(tx *sql.Tx, relPath string) {
+	stmt, err := tx.Prepare(`
+		DELETE FROM files WHERE path=? AND visited=0`)
+	if err != nil {
+		logFatal("Failed to prepare delete %s: %s", relPath, err.Error())
+	}
+	defer stmt.Close()
+
+	res, err := stmt.Exec(relPath)
+	if err != nil {
+		logFatal("Failed to delete %s: %s", relPath, err.Error())
+	}
+	assertRowsAffected(res, 1)
+}
+
 func mustQueryUnvisitedFiles(tx *sql.Tx, prefix string,
 	procOneFile func(file *fileInfo)) {
+	if prefix != "" && prefix[len(prefix)-1] != '/' {
+		logFatal("prefix must end with '/'")
+	}
 	stmt, err := tx.Prepare(
 		`SELECT path, size, checksum FROM files
 			WHERE path LIKE ? ESCAPE '\' AND visited=0
@@ -217,6 +235,9 @@ func mustQueryUnvisitedFiles(tx *sql.Tx, prefix string,
 }
 
 func mustDeleteUnvisitedFiles(tx *sql.Tx, prefix string, expectN int64) {
+	if prefix != "" && prefix[len(prefix)-1] != '/' {
+		logFatal("prefix must end with '/'")
+	}
 	stmt, err := tx.Prepare(`
 		DELETE FROM files WHERE path LIKE ? ESCAPE '\' AND visited=0`)
 	if err != nil {
