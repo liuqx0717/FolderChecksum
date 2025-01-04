@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"math"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -59,14 +60,14 @@ var testDbRows = [...]fileRow{
 	{
 		// The name contains special characters \ _ " ' `
 		path:     "dir\\_2/dir1/\"'`file1",
-		size:     111,
+		size:     math.MaxUint32 * 10,
 		checksum: "eee",
 		visited:  false,
 	},
 	{
 		// The name contains special characters \ _ " ' `
 		path:     "dir\\_2/dir1/\"'`file2",
-		size:     111,
+		size:     math.MaxUint32 * 10,
 		checksum: "fff",
 		visited:  true,
 	},
@@ -205,7 +206,7 @@ func TestUpdateAndMarkFile(t *testing.T) {
 	for _, row := range testDbRows {
 		mustUpdateAndMarkFile(stmt, &fileInfo{
 			path:     row.path,
-			size:     111,
+			size:     math.MaxInt64,
 			checksum: "newchecksum",
 		})
 	}
@@ -215,7 +216,7 @@ func TestUpdateAndMarkFile(t *testing.T) {
 	actualRows := getAllRowsFromFiles(t, db)
 	expectRows := copyAndSortFileRows(testDbRows[:])
 	for i := range expectRows {
-		expectRows[i].size = 111
+		expectRows[i].size = math.MaxInt64
 		expectRows[i].checksum = "newchecksum"
 		expectRows[i].visited = true
 	}
@@ -338,7 +339,7 @@ func TestQueryUnvisitedFiles(t *testing.T) {
 	expect = []fileInfo{
 		{
 			path:     "dir\\_2/dir1/\"'`file1",
-			size:     111,
+			size:     math.MaxUint32 * 10,
 			checksum: "eee",
 		},
 	}
