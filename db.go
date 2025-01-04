@@ -8,7 +8,7 @@ import (
 )
 
 type fileInfo struct {
-	path     string
+	relPath  string
 	size     int64
 	checksum string
 }
@@ -91,9 +91,9 @@ func mustInsertFile(stmt *sql.Stmt, file *fileInfo) {
 	var err error
 
 	if file.checksum == "" {
-		res, err = stmt.Exec(file.path, file.size, nil)
+		res, err = stmt.Exec(file.relPath, file.size, nil)
 	} else {
-		res, err = stmt.Exec(file.path, file.size, file.checksum)
+		res, err = stmt.Exec(file.relPath, file.size, file.checksum)
 	}
 	if err != nil {
 		logFatal("Failed to insert %+v: %s", file, err.Error())
@@ -119,9 +119,9 @@ func mustUpdateAndMarkFile(stmt *sql.Stmt, file *fileInfo) {
 	var err error
 
 	if file.checksum == "" {
-		res, err = stmt.Exec(file.size, nil, file.path)
+		res, err = stmt.Exec(file.size, nil, file.relPath)
 	} else {
-		res, err = stmt.Exec(file.size, file.checksum, file.path)
+		res, err = stmt.Exec(file.size, file.checksum, file.relPath)
 	}
 	if err != nil {
 		logFatal("Failed to update %+v: %s", file, err.Error())
@@ -144,35 +144,35 @@ func mustPrepareMarkFile(tx *sql.Tx) *sql.Stmt {
 	return stmt
 }
 
-func mustMarkFile(stmt *sql.Stmt, path string) {
-	res, err := stmt.Exec(path)
+func mustMarkFile(stmt *sql.Stmt, relPath string) {
+	res, err := stmt.Exec(relPath)
 	if err != nil {
-		logFatal("Failed to mark %s: %s", path, err.Error())
+		logFatal("Failed to mark %s: %s", relPath, err.Error())
 	}
 	assertRowsAffected(res, 1)
 }
 
 // Return nil or fileInfo.
-func mustQueryFile(db *sql.DB, path string) any {
+func mustQueryFile(db *sql.DB, relPath string) any {
 	stmt, err := db.Prepare(
 		`SELECT size, checksum FROM files WHERE path=?`)
 	if err != nil {
-		logFatal("Failed to prepare query %s: %s", path, err.Error())
+		logFatal("Failed to prepare query %s: %s", relPath, err.Error())
 	}
 	defer stmt.Close()
 
 	ret := fileInfo{
-		path:     path,
+		relPath:  relPath,
 		size:     0,
 		checksum: "",
 	}
 	var checksum any
-	err = stmt.QueryRow(path).Scan(&ret.size, &checksum)
+	err = stmt.QueryRow(relPath).Scan(&ret.size, &checksum)
 	if err == sql.ErrNoRows {
 		return nil
 	}
 	if err != nil {
-		logFatal("Failed to query %s: %s", path, err.Error())
+		logFatal("Failed to query %s: %s", relPath, err.Error())
 	}
 
 	if checksum != nil {
@@ -200,12 +200,12 @@ func mustQueryUnvisitedFiles(tx *sql.Tx, prefix string,
 
 	for rows.Next() {
 		file := fileInfo{
-			path:     "",
+			relPath:  "",
 			size:     0,
 			checksum: "",
 		}
 		var checksum any
-		err = rows.Scan(&file.path, &file.size, &checksum)
+		err = rows.Scan(&file.relPath, &file.size, &checksum)
 		if err != nil {
 			logFatal("Failed to scan %s: %s", prefix, err.Error())
 		}

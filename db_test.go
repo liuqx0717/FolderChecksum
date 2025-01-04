@@ -173,7 +173,7 @@ func TestInsertFile(t *testing.T) {
 
 	for _, row := range testDbRows {
 		file := fileInfo{
-			path:     row.path,
+			relPath:  row.path,
 			size:     row.size,
 			checksum: "",
 		}
@@ -205,7 +205,7 @@ func TestUpdateAndMarkFile(t *testing.T) {
 
 	for _, row := range testDbRows {
 		mustUpdateAndMarkFile(stmt, &fileInfo{
-			path:     row.path,
+			relPath:  row.path,
 			size:     math.MaxInt64,
 			checksum: "newchecksum",
 		})
@@ -269,7 +269,7 @@ func TestQueryFile(t *testing.T) {
 	for _, row := range testDbRows {
 		actual := mustQueryFile(db, row.path)
 		expect := fileInfo{
-			path:     row.path,
+			relPath:  row.path,
 			size:     row.size,
 			checksum: "",
 		}
@@ -305,7 +305,7 @@ func TestQueryUnvisitedFiles(t *testing.T) {
 			continue
 		}
 		file := fileInfo{
-			path:     row.path,
+			relPath:  row.path,
 			size:     row.size,
 			checksum: "",
 		}
@@ -321,12 +321,12 @@ func TestQueryUnvisitedFiles(t *testing.T) {
 	actual = []fileInfo{}
 	expect = []fileInfo{
 		{
-			path:     "%dir1/dir1/file2",
+			relPath:  "%dir1/dir1/file2",
 			size:     789,
 			checksum: "ddd",
 		},
 		{
-			path:     "%dir1/file1",
+			relPath:  "%dir1/file1",
 			size:     456,
 			checksum: "",
 		},
@@ -338,7 +338,7 @@ func TestQueryUnvisitedFiles(t *testing.T) {
 	actual = []fileInfo{}
 	expect = []fileInfo{
 		{
-			path:     "dir\\_2/dir1/\"'`file1",
+			relPath:  "dir\\_2/dir1/\"'`file1",
 			size:     math.MaxUint32 * 10,
 			checksum: "eee",
 		},
