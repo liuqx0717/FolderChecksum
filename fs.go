@@ -1,6 +1,9 @@
 package main
 
 import (
+	"crypto/md5"
+	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -90,4 +93,20 @@ func mustWalkDir(rootDir string, prefix string, followSymLinks bool,
 			}
 			return nil
 		})
+}
+
+// Return md5 string and number of bytes read.
+func mustCalcFileMd5(filePath string) (string, int64) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		logFatal("Failed to open '%s': %s", filePath, err.Error())
+	}
+	defer file.Close()
+
+	hash := md5.New()
+	n, err := io.Copy(hash, file)
+	if err != nil {
+		logFatal("Failed to compute md5 for '%s': %s", filePath, err.Error())
+	}
+	return fmt.Sprintf("%x", hash.Sum(nil)), n
 }

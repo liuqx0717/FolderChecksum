@@ -28,6 +28,7 @@ func verifyWalkRes(t *testing.T, actual []walkRes, expect []walkRes) {
 // - testDir
 // | file1
 // | file2
+// | emptyFile
 // | - dir1
 // | | file1
 // | | file2
@@ -49,6 +50,10 @@ func prepareTestDir(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	err = os.WriteFile(filepath.Join(testDir, "emptyFile"), []byte(""), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	dir1 := filepath.Join(testDir, "dir1")
 	err = os.Mkdir(dir1, 0755)
@@ -63,7 +68,7 @@ func prepareTestDir(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = os.WriteFile(filepath.Join(dir1, "file2"), []byte("dir2/file2"), 0644)
+	err = os.WriteFile(filepath.Join(dir1, "file2"), []byte("dir1/file2"), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,6 +90,53 @@ func prepareTestDir(t *testing.T) string {
 	return testDir
 }
 
+func TestCalcFileMd5(t *testing.T) {
+	// % echo -n '' | md5sum
+	// d41d8cd98f00b204e9800998ecf8427e  -
+	// % echo -n 'file1' | md5sum
+	// 826e8142e6baabe8af779f5f490cf5f5  -
+	// % echo -n 'dir1/file1' | md5sum
+	// a09ebcef8ab11daef0e33e4394ea775f  -
+
+	rootDir := prepareTestDir(t)
+
+	// Empty file.
+	md5, n := mustCalcFileMd5(filepath.Join(rootDir, "emptyFile"))
+	if md5 != "d41d8cd98f00b204e9800998ecf8427e" {
+		t.Fatalf("Incorrect md5: %s", md5)
+	}
+	if n != 0 {
+		t.Fatalf("Incorrect n: %d", n)
+	}
+
+	// Non-empty file.
+	md5, n = mustCalcFileMd5(filepath.Join(rootDir, "file1"))
+	if md5 != "826e8142e6baabe8af779f5f490cf5f5" {
+		t.Fatalf("Incorrect md5: %s", md5)
+	}
+	if n != 5 {
+		t.Fatalf("Incorrect n: %d", n)
+	}
+
+	// Symlink to a file.
+	md5, n = mustCalcFileMd5(filepath.Join(rootDir, "dir2", "file1"))
+	if md5 != "826e8142e6baabe8af779f5f490cf5f5" {
+		t.Fatalf("Incorrect md5: %s", md5)
+	}
+	if n != 5 {
+		t.Fatalf("Incorrect n: %d", n)
+	}
+
+	// Symlink in path.
+	md5, n = mustCalcFileMd5(filepath.Join(rootDir, "dir2", "dir1", "file1"))
+	if md5 != "a09ebcef8ab11daef0e33e4394ea775f" {
+		t.Fatalf("Incorrect md5: %s", md5)
+	}
+	if n != 10 {
+		t.Fatalf("Incorrect n: %d", n)
+	}
+}
+
 func TestWalkDirIgnoreSymLinks(t *testing.T) {
 	var actual []walkRes
 	var expect []walkRes
@@ -98,6 +150,7 @@ func TestWalkDirIgnoreSymLinks(t *testing.T) {
 	expect = []walkRes{
 		{"dir1/file1", 10},
 		{"dir1/file2", 10},
+		{"emptyFile", 0},
 		{"file1", 5},
 		{"file2", 5},
 	}
