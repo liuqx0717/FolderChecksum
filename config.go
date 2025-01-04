@@ -25,6 +25,7 @@ type config struct {
 	excludeList flagValues
 	includeList flagValues
 	followLinks bool
+	sizeOnly    bool
 	update      bool
 }
 
@@ -49,7 +50,7 @@ func init() {
 		fmt.Fprintln(w, "  <rootdir>")
 		fmt.Fprintln(w, "    \tThe root folder to calculate the checksums. For each subfile, the")
 		fmt.Fprintln(w, "    \tpath relative to <rootdir>, the size, and the md5 checksum will be")
-		fmt.Fprintln(w, "    \tstored into <dbfile>.")
+		fmt.Fprintln(w, "    \tstored into <dbfile>. <rootdir> must be a folder.")
 		fmt.Fprintln(w, "")
 		fmt.Fprintln(w, "  <prefix>")
 		fmt.Fprintln(w, "    \tOnly process some of the files in <rootdir> whose relative path")
@@ -58,6 +59,13 @@ func init() {
 		fmt.Fprintln(w, "    \totherwise some assertions will be triggered. E.g., a/b and a/b/c")
 		fmt.Fprintln(w, "    \tare overlapping, but a/b/c and a/b/d are not. Slash (/) should")
 		fmt.Fprintln(w, "    \talways be used as the path separator in <prefix>, even on Windows.")
+		fmt.Fprintln(w, "    \tFor each specified <prefix>, the tool will perform:")
+		fmt.Fprintln(w, "    \t  1. Clean the path to the shortest form.")
+		fmt.Fprintln(w, "    \t  2. In the filesystem, recursively scan the entire subfolder if")
+		fmt.Fprintln(w, "    \t     it's a folder, or scan the single file if it's a file. If it")
+		fmt.Fprintln(w, "    \t     doesn't exist, go to step 3 directly.")
+		fmt.Fprintln(w, "    \t  3. In the database, check the single entry '<prefix>' and all")
+		fmt.Fprintln(w, "    \t     the entries that start with '<prefix>/'.")
 		fmt.Fprintln(w, "")
 		fmt.Fprintln(w, "Options:")
 		fmt.Fprintln(w, "")
@@ -99,15 +107,18 @@ func init() {
 			"<exclude> list. If it contains at least one "+s+", the file will be\n"+
 			"located using the path (for absolute paths) or current working\n"+
 			"directory (for relative paths).\n")
-	flag.BoolVar(&cfg.followLinks, "followlinks", false,
-		"Follow symlinks as if the targets themselves are in the folder.\n"+
-			"By default symlinks are ignored.")
 	flag.Var(&cfg.excludeList, "exclude",
 		"Append a regex pattern to the <exclude> list. This option may be\n"+
 			"repeated. See Pattern Matching section for more details.")
 	flag.Var(&cfg.includeList, "include",
 		"Append a regex pattern to the <include> list. This option may be\n"+
 			"repeated. See Pattern Matching section for more details.")
+	flag.BoolVar(&cfg.followLinks, "followlinks", false,
+		"Follow symlinks as if the targets themselves are in the folder (\n"+
+			"fail on broken links). By default symlinks in <rootdir> and <prefix>\n"+
+			"are followed and others are skipped.")
+	flag.BoolVar(&cfg.sizeOnly, "sizeonly", false,
+		"Detect changes only by checking file sizes (instead of checksums).")
 	flag.BoolVar(&cfg.update, "update", false,
 		"Update the <dbfile>. By default this tool only compares current\n"+
 			"<rootdir> against <dbfile> without modifying <dbfile>.")

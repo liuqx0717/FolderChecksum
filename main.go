@@ -12,4 +12,7 @@ func main() {
 		fmt.Printf("Version %s\n", VERSION)
 		os.Exit(0)
 	}
+	if cfg.followLinks {
+		logFatal("Option not implemented")
+	}
 }

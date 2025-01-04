@@ -151,7 +151,6 @@ func insertRowsToFiles(t *testing.T, db *sql.DB, rows []fileRow) {
 // The user should call Close() on the return value.
 func prepareTestDb(t *testing.T) *sql.DB {
 	dbFile := filepath.Join(t.TempDir(), "test.db")
-	t.Logf("test db file: %s", dbFile)
 
 	db := mustOpenDb(dbFile)
 	mustCreateFilesTable(db)
