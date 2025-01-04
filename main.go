@@ -8,6 +8,8 @@ import (
 
 func main() {
 	flag.Parse()
+	parsePositionalArgs()
+	flagsToConfig()
 	if cfg.version {
 		fmt.Printf("Version %s\n", VERSION)
 		os.Exit(0)

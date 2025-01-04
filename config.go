@@ -4,6 +4,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path"
+	"path/filepath"
+	"regexp"
+	"strings"
 )
 
 type flagValues []string
@@ -17,8 +21,7 @@ func (arr *flagValues) Set(value string) error {
 	return nil
 }
 
-type config struct {
-	pathSep     string
+type flags struct {
 	version     bool
 	logLevel    int
 	dbFile      string
@@ -27,13 +30,28 @@ type config struct {
 	followLinks bool
 	sizeOnly    bool
 	update      bool
+	rootDir     string
+	prefix      flagValues
 }
 
+type config struct {
+	version     bool
+	logLevel    int
+	dbFile      string
+	excludeList *regexp.Regexp
+	includeList *regexp.Regexp
+	followLinks bool
+	sizeOnly    bool
+	update      bool
+	rootDir     string
+	prefix      []string
+}
+
+var flg flags
 var cfg config
 
 func init() {
-	cfg.pathSep = string(os.PathSeparator)
-	s := "'" + cfg.pathSep + "'"
+	s := "'" + string(os.PathSeparator) + "'"
 	flag.Usage = func() {
 		w := flag.CommandLine.Output()
 		fmt.Fprintln(w, "")
@@ -96,30 +114,96 @@ func init() {
 		fmt.Fprintln(w, "  specified pattern.")
 		fmt.Fprintln(w, "")
 	}
-	flag.BoolVar(&cfg.version, "version", false,
+	flag.BoolVar(&flg.version, "version", false,
 		"Display version number and exit.\n")
-	flag.IntVar(&cfg.logLevel, "loglevel", INFO,
+	flag.IntVar(&flg.logLevel, "loglevel", DEBUG,
 		"Set log level (ERROR=0, WARNING=1, INFO=2, DEBUG=3). Logs greater\n"+
 			"than or equal to this level will be printed to stderr.\n")
-	flag.StringVar(&cfg.dbFile, "dbfile", ".checksum.db",
+	flag.StringVar(&flg.dbFile, "dbfile", ".checksum.db",
 		"Set database file name. If it doesn't contain any "+s+", the file\n"+
 			"will be put into <rootdir> and will be automatically added to the\n"+
 			"<exclude> list. If it contains at least one "+s+", the file will be\n"+
 			"located using the path (for absolute paths) or current working\n"+
 			"directory (for relative paths).\n")
-	flag.Var(&cfg.excludeList, "exclude",
+	flag.Var(&flg.excludeList, "exclude",
 		"Append a regex pattern to the <exclude> list. This option may be\n"+
 			"repeated. See Pattern Matching section for more details.")
-	flag.Var(&cfg.includeList, "include",
+	flag.Var(&flg.includeList, "include",
 		"Append a regex pattern to the <include> list. This option may be\n"+
 			"repeated. See Pattern Matching section for more details.")
-	flag.BoolVar(&cfg.followLinks, "followlinks", false,
+	flag.BoolVar(&flg.followLinks, "followlinks", false,
 		"Follow symlinks as if the targets themselves are in the folder (\n"+
 			"fail on broken links). By default symlinks in <rootdir> and <prefix>\n"+
 			"are followed and others are skipped.")
-	flag.BoolVar(&cfg.sizeOnly, "sizeonly", false,
+	flag.BoolVar(&flg.sizeOnly, "sizeonly", false,
 		"Detect changes only by checking file sizes (instead of checksums).")
-	flag.BoolVar(&cfg.update, "update", false,
+	flag.BoolVar(&flg.update, "update", false,
 		"Update the <dbfile>. By default this tool only compares current\n"+
 			"<rootdir> against <dbfile> without modifying <dbfile>.")
+}
+
+func parsePositionalArgs() {
+	n := flag.NArg()
+	if n < 1 {
+		logFatal("Missing arg <rootDir>")
+	}
+	flg.rootDir = flag.Arg(0)
+	for i := 1; i < n; i++ {
+		flg.prefix = append(flg.prefix, flag.Arg(i))
+	}
+}
+
+func getRegexFromList(patterns []string) *regexp.Regexp {
+	regStr := "^"
+	for _, pattern := range patterns {
+		if _, err := regexp.Compile(pattern); err != nil {
+			logFatal("Invalid regex pattern '%s': %s", pattern, err.Error())
+		}
+		regStr += "(" + pattern + ")|"
+	}
+	if regStr[len(regStr)-1] == '|' {
+		regStr = regStr[:len(regStr)-1]
+	}
+	regStr += "$"
+
+	logDebug("regStr: %s", regStr)
+	return regexp.MustCompile(regStr)
+}
+
+func flagsToConfig() {
+	containPathSep := strings.Contains(flg.dbFile, string(os.PathSeparator))
+	if !containPathSep && flg.dbFile != path.Clean(flg.dbFile) {
+		logFatal("Cleaned dbFile '%s' not equal to original '%s'",
+			path.Clean(flg.dbFile), flg.dbFile)
+	}
+
+	cfg.version = flg.version
+	cfg.logLevel = flg.logLevel
+
+	if containPathSep {
+		cfg.dbFile = flg.dbFile
+	} else {
+		cfg.dbFile = filepath.Join(flg.rootDir, flg.dbFile)
+	}
+	cfg.dbFile = filepath.Clean(cfg.dbFile)
+
+	if containPathSep {
+		cfg.excludeList = getRegexFromList(flg.excludeList)
+	} else {
+		cfg.excludeList = getRegexFromList(
+			append(flg.excludeList, regexp.QuoteMeta(flg.dbFile)))
+	}
+
+	cfg.includeList = getRegexFromList(flg.includeList)
+	cfg.followLinks = flg.followLinks
+	cfg.sizeOnly = flg.sizeOnly
+	cfg.update = flg.update
+	cfg.rootDir = filepath.Clean(flg.rootDir)
+
+	for _, prefix := range flg.prefix {
+		cfg.prefix = append(cfg.prefix, cleanPrefix(prefix))
+	}
+
+	logDebug("flg: %+v", flg)
+	logDebug("cfg: %+v", cfg)
 }
