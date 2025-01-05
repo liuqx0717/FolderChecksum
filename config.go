@@ -34,9 +34,9 @@ type flags struct {
 	prefix      flagValues
 }
 
+var flg flags
+
 type config struct {
-	version     bool
-	logLevel    int
 	dbFile      string
 	excludeList *regexp.Regexp
 	includeList *regexp.Regexp
@@ -46,9 +46,6 @@ type config struct {
 	rootDir     string
 	prefix      []string
 }
-
-var flg flags
-var cfg config
 
 func init() {
 	s := "'" + string(os.PathSeparator) + "'"
@@ -170,40 +167,43 @@ func getRegexFromList(patterns []string) *regexp.Regexp {
 	return regexp.MustCompile(regStr)
 }
 
-func flagsToConfig() {
-	containPathSep := strings.Contains(flg.dbFile, string(os.PathSeparator))
-	if !containPathSep && flg.dbFile != path.Clean(flg.dbFile) {
+func flagsToConfig(f *flags) *config {
+	var cfg config
+
+	containPathSep := strings.Contains(f.dbFile, string(os.PathSeparator))
+	if !containPathSep && f.dbFile != path.Clean(f.dbFile) {
 		logFatal("Cleaned dbFile '%s' not equal to original '%s'",
-			path.Clean(flg.dbFile), flg.dbFile)
+			path.Clean(f.dbFile), f.dbFile)
 	}
 
-	cfg.version = flg.version
-	cfg.logLevel = flg.logLevel
+	logLevel = f.logLevel
 
 	if containPathSep {
-		cfg.dbFile = flg.dbFile
+		cfg.dbFile = f.dbFile
 	} else {
-		cfg.dbFile = filepath.Join(flg.rootDir, flg.dbFile)
+		cfg.dbFile = filepath.Join(f.rootDir, f.dbFile)
 	}
 	cfg.dbFile = filepath.Clean(cfg.dbFile)
 
 	if containPathSep {
-		cfg.excludeList = getRegexFromList(flg.excludeList)
+		cfg.excludeList = getRegexFromList(f.excludeList)
 	} else {
 		cfg.excludeList = getRegexFromList(
-			append(flg.excludeList, regexp.QuoteMeta(flg.dbFile)))
+			append(f.excludeList, regexp.QuoteMeta(f.dbFile)))
 	}
 
-	cfg.includeList = getRegexFromList(flg.includeList)
-	cfg.followLinks = flg.followLinks
-	cfg.sizeOnly = flg.sizeOnly
-	cfg.update = flg.update
-	cfg.rootDir = filepath.Clean(flg.rootDir)
+	cfg.includeList = getRegexFromList(f.includeList)
+	cfg.followLinks = f.followLinks
+	cfg.sizeOnly = f.sizeOnly
+	cfg.update = f.update
+	cfg.rootDir = filepath.Clean(f.rootDir)
 
-	for _, prefix := range flg.prefix {
+	for _, prefix := range f.prefix {
 		cfg.prefix = append(cfg.prefix, cleanPrefix(prefix))
 	}
 
 	logDebug("flg: %+v", flg)
 	logDebug("cfg: %+v", cfg)
+
+	return &cfg
 }

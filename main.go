@@ -8,12 +8,12 @@ import (
 
 func main() {
 	flag.Parse()
-	parsePositionalArgs()
-	flagsToConfig()
-	if cfg.version {
+	if flg.version {
 		fmt.Printf("Version %s\n", VERSION)
 		os.Exit(0)
 	}
+	parsePositionalArgs()
+	cfg := flagsToConfig(&flg)
 	if cfg.followLinks {
 		logFatal("Option not implemented")
 	}
