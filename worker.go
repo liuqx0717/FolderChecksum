@@ -119,8 +119,8 @@ func fileCheckWorker(cfg *config, wg *sync.WaitGroup,
 		// Compare the checksum.
 		info.checksum = mustCalcChecksum(path, msg.size, cfg.sizeOnly)
 		if !dbHasChecksum {
-			logWarning("Db only has size info for '%s' but -sizeonly is " +
-				"not used.")
+			logWarning("Db only has size info for '%s' but -sizeonly is "+
+				"not used.", path)
 		}
 		if infoInDb.(fileInfo).checksum == info.checksum {
 			outputUnchangedFile(msg.relPath)

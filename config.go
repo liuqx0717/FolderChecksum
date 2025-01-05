@@ -39,9 +39,9 @@ var flg flags
 
 type config struct {
 	dbFile      string
-	db          *sql.DB
-	excludeList *regexp.Regexp
-	includeList *regexp.Regexp
+	db          *sql.DB        // thread safe
+	excludeList *regexp.Regexp // thread safe
+	includeList *regexp.Regexp // thread safe
 	followLinks bool
 	sizeOnly    bool
 	update      bool
