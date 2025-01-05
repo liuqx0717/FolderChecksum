@@ -39,4 +39,5 @@ func logDebug(fmt string, args ...any) {
 
 func init() {
 	log.SetFlags(log.Ltime)
+	logLevel = DEBUG
 }

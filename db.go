@@ -152,8 +152,8 @@ func mustMarkFile(stmt *sql.Stmt, relPath string) {
 	assertRowsAffected(res, 1)
 }
 
-// Return nil or fileInfo.
-func mustQueryFile(dbOrTx any, relPath string, visitedOut *bool) any {
+// Return 1. nil or fileInfo; 2. visited flag.
+func mustQueryFile(dbOrTx any, relPath string) (any, bool) {
 	var stmt *sql.Stmt
 	var err error
 	switch v := dbOrTx.(type) {
@@ -180,19 +180,16 @@ func mustQueryFile(dbOrTx any, relPath string, visitedOut *bool) any {
 	var visited bool
 	err = stmt.QueryRow(relPath).Scan(&ret.size, &checksum, &visited)
 	if err == sql.ErrNoRows {
-		return nil
+		return nil, false
 	}
 	if err != nil {
 		logFatal("Failed to query %s: %s", relPath, err.Error())
 	}
 
-	if visitedOut != nil {
-		*visitedOut = visited
-	}
 	if checksum != nil {
 		ret.checksum = checksum.(string)
 	}
-	return ret
+	return ret, visited
 }
 
 func mustDeleteUnvisitedFile(tx *sql.Tx, relPath string) {

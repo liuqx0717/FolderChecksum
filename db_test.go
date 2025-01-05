@@ -149,8 +149,12 @@ func getAllRowsFromFiles(t *testing.T, db *sql.DB) []fileRow {
 	return ret
 }
 
-func insertRowsToFiles(t *testing.T, db *sql.DB, rows []fileRow) {
+func clearAndInsertRowsToFiles(t *testing.T, db *sql.DB, rows []fileRow) {
 	tx := mustCreateTx(db)
+	_, err := tx.Exec("DELETE FROM files")
+	if err != nil {
+		t.Fatal(err)
+	}
 	stmt, err := tx.Prepare(
 		`INSERT INTO files(path, size, checksum, visited)
 			VALUES(?, ?, ?, ?)`)
@@ -214,7 +218,7 @@ func TestUpdateAndMarkFile(t *testing.T) {
 	db := prepareTestDb(t)
 	defer db.Close()
 
-	insertRowsToFiles(t, db, testDbRows[:])
+	clearAndInsertRowsToFiles(t, db, testDbRows[:])
 
 	tx := mustCreateTx(db)
 	stmt := mustPrepareUpdateAndMarkFile(tx)
@@ -244,7 +248,7 @@ func TestMarkFile(t *testing.T) {
 	db := prepareTestDb(t)
 	defer db.Close()
 
-	insertRowsToFiles(t, db, testDbRows[:])
+	clearAndInsertRowsToFiles(t, db, testDbRows[:])
 
 	tx := mustCreateTx(db)
 	stmt := mustPrepareMarkFile(tx)
@@ -268,25 +272,23 @@ func TestQueryFile(t *testing.T) {
 	db := prepareTestDb(t)
 	defer db.Close()
 
-	insertRowsToFiles(t, db, testDbRows[:])
+	clearAndInsertRowsToFiles(t, db, testDbRows[:])
 
 	// Query a non-existing file
-	file := mustQueryFile(db, "fileX", nil)
-	if file != nil {
+	file, visited := mustQueryFile(db, "fileX")
+	if file != nil || visited {
 		t.Errorf("nil expected: %+v", file)
 	}
 
 	// Query an existing folder name
-	file = mustQueryFile(db, "%dir1", nil)
-	if file != nil {
+	file, visited = mustQueryFile(db, "%dir1")
+	if file != nil || visited {
 		t.Errorf("nil expected: %+v", file)
 	}
 
 	// Query existing file names
 	for _, row := range testDbRows {
-		var visited bool
-		actual := mustQueryFile(db, row.path, nil)
-		actual = mustQueryFile(db, row.path, &visited)
+		actual, visited := mustQueryFile(db, row.path)
 		expect := fileInfo{
 			relPath:  row.path,
 			size:     row.size,
@@ -312,7 +314,7 @@ func TestDeleteUnvisitedFile(t *testing.T) {
 	var actualRows []fileRow
 	var expectRows []fileRow
 
-	insertRowsToFiles(t, db, testDbRows[:])
+	clearAndInsertRowsToFiles(t, db, testDbRows[:])
 	tx := mustCreateTx(db)
 	mustDeleteUnvisitedFile(tx, "file2")
 	mustCommitTx(tx)
@@ -331,7 +333,7 @@ func TestQueryUnvisitedFiles(t *testing.T) {
 	db := prepareTestDb(t)
 	defer db.Close()
 
-	insertRowsToFiles(t, db, testDbRows[:])
+	clearAndInsertRowsToFiles(t, db, testDbRows[:])
 
 	var actual []fileInfo
 	var expect []fileInfo
@@ -407,7 +409,7 @@ func TestDeleteUnvisitedFiles(t *testing.T) {
 	var expectRows []fileRow
 
 	// Delete all unvisited files.
-	insertRowsToFiles(t, db, testDbRows[:])
+	clearAndInsertRowsToFiles(t, db, testDbRows[:])
 	tx := mustCreateTx(db)
 	mustDeleteUnvisitedFiles(tx, "", 5)
 	mustCommitTx(tx)
@@ -420,13 +422,9 @@ func TestDeleteUnvisitedFiles(t *testing.T) {
 		expectRows = append(expectRows, row)
 	}
 	verifyFileRows(t, actualRows, expectRows)
-	_, err := db.Exec("DELETE FROM files")
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	// Delete all unvisited files in %dir1.
-	insertRowsToFiles(t, db, testDbRows[:])
+	clearAndInsertRowsToFiles(t, db, testDbRows[:])
 	tx = mustCreateTx(db)
 	mustDeleteUnvisitedFiles(tx, "%dir1/", 2)
 	mustCommitTx(tx)
@@ -439,13 +437,9 @@ func TestDeleteUnvisitedFiles(t *testing.T) {
 		expectRows = append(expectRows, row)
 	}
 	verifyFileRows(t, actualRows, expectRows)
-	_, err = db.Exec("DELETE FROM files")
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	// Delete all unvisited files in dir\_2.
-	insertRowsToFiles(t, db, testDbRows[:])
+	clearAndInsertRowsToFiles(t, db, testDbRows[:])
 	tx = mustCreateTx(db)
 	mustDeleteUnvisitedFiles(tx, `dir\_2/`, 1)
 	mustCommitTx(tx)
@@ -458,23 +452,15 @@ func TestDeleteUnvisitedFiles(t *testing.T) {
 		expectRows = append(expectRows, row)
 	}
 	verifyFileRows(t, actualRows, expectRows)
-	_, err = db.Exec("DELETE FROM files")
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	// Delete all unvisited files in a non-existing folder.
-	insertRowsToFiles(t, db, testDbRows[:])
+	clearAndInsertRowsToFiles(t, db, testDbRows[:])
 	tx = mustCreateTx(db)
 	mustDeleteUnvisitedFiles(tx, `dirXXX/`, 0)
 	mustCommitTx(tx)
 	actualRows = getAllRowsFromFiles(t, db)
 	expectRows = copyAndSortFileRows(testDbRows[:])
 	verifyFileRows(t, actualRows, expectRows)
-	_, err = db.Exec("DELETE FROM files")
-	if err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestClearVisitedFlag(t *testing.T) {
@@ -484,17 +470,21 @@ func TestClearVisitedFlag(t *testing.T) {
 	var actualRows []fileRow
 	var expectRows []fileRow
 
-	insertRowsToFiles(t, db, testDbRows[:])
+	clearAndInsertRowsToFiles(t, db, testDbRows[:])
 
 	// Clear existing file names
 	tx := mustCreateTx(db)
-	for i, row := range expectRows {
-		mustClearVisitedFlag(tx, row.path)
-		expectRows[i].visited = false
+	for _, row := range testDbRows {
+		if row.visited {
+			mustClearVisitedFlag(tx, row.path)
+		}
 	}
 	mustCommitTx(tx)
 	actualRows = getAllRowsFromFiles(t, db)
 	expectRows = copyAndSortFileRows(testDbRows[:])
+	for i := range expectRows {
+		expectRows[i].visited = false
+	}
 	verifyFileRows(t, actualRows, expectRows)
 }
 
@@ -506,7 +496,7 @@ func TestClearVisitedFlags(t *testing.T) {
 	var expectRows []fileRow
 
 	// Clear all files.
-	insertRowsToFiles(t, db, testDbRows[:])
+	clearAndInsertRowsToFiles(t, db, testDbRows[:])
 	tx := mustCreateTx(db)
 	n := mustClearVisitedFlags(tx, "")
 	mustCommitTx(tx)
@@ -525,7 +515,7 @@ func TestClearVisitedFlags(t *testing.T) {
 	}
 
 	// Clear files in %dir1.
-	insertRowsToFiles(t, db, testDbRows[:])
+	clearAndInsertRowsToFiles(t, db, testDbRows[:])
 	tx = mustCreateTx(db)
 	n = mustClearVisitedFlags(tx, "%dir1/")
 	mustCommitTx(tx)
@@ -546,7 +536,7 @@ func TestClearVisitedFlags(t *testing.T) {
 	}
 
 	// Clear files in dir\_2.
-	insertRowsToFiles(t, db, testDbRows[:])
+	clearAndInsertRowsToFiles(t, db, testDbRows[:])
 	tx = mustCreateTx(db)
 	n = mustClearVisitedFlags(tx, `dir\_2/`)
 	mustCommitTx(tx)
@@ -567,7 +557,7 @@ func TestClearVisitedFlags(t *testing.T) {
 	}
 
 	// Clear files in a non-existing folder.
-	insertRowsToFiles(t, db, testDbRows[:])
+	clearAndInsertRowsToFiles(t, db, testDbRows[:])
 	tx = mustCreateTx(db)
 	n = mustClearVisitedFlags(tx, `dirXXX/`)
 	mustCommitTx(tx)
