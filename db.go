@@ -153,16 +153,16 @@ func mustMarkFile(stmt *sql.Stmt, relPath string) {
 }
 
 // Return nil or fileInfo.
-func mustQueryFile(dbOrTx any, relPath string) any {
+func mustQueryFile(dbOrTx any, relPath string, visitedOut *bool) any {
 	var stmt *sql.Stmt
 	var err error
 	switch v := dbOrTx.(type) {
 	case *sql.DB:
 		stmt, err = v.Prepare(
-			`SELECT size, checksum FROM files WHERE path=?`)
+			`SELECT size, checksum, visited FROM files WHERE path=?`)
 	case *sql.Tx:
 		stmt, err = v.Prepare(
-			`SELECT size, checksum FROM files WHERE path=?`)
+			`SELECT size, checksum, visited FROM files WHERE path=?`)
 	default:
 		logFatal("dbOrTx has incorrect type")
 	}
@@ -177,7 +177,8 @@ func mustQueryFile(dbOrTx any, relPath string) any {
 		checksum: "",
 	}
 	var checksum any
-	err = stmt.QueryRow(relPath).Scan(&ret.size, &checksum)
+	var visited bool
+	err = stmt.QueryRow(relPath).Scan(&ret.size, &checksum, &visited)
 	if err == sql.ErrNoRows {
 		return nil
 	}
@@ -185,6 +186,9 @@ func mustQueryFile(dbOrTx any, relPath string) any {
 		logFatal("Failed to query %s: %s", relPath, err.Error())
 	}
 
+	if visitedOut != nil {
+		*visitedOut = visited
+	}
 	if checksum != nil {
 		ret.checksum = checksum.(string)
 	}

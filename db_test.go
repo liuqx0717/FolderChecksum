@@ -271,20 +271,22 @@ func TestQueryFile(t *testing.T) {
 	insertRowsToFiles(t, db, testDbRows[:])
 
 	// Query a non-existing file
-	file := mustQueryFile(db, "fileX")
+	file := mustQueryFile(db, "fileX", nil)
 	if file != nil {
 		t.Errorf("nil expected: %+v", file)
 	}
 
 	// Query an existing folder name
-	file = mustQueryFile(db, "%dir1")
+	file = mustQueryFile(db, "%dir1", nil)
 	if file != nil {
 		t.Errorf("nil expected: %+v", file)
 	}
 
 	// Query existing file names
 	for _, row := range testDbRows {
-		actual := mustQueryFile(db, row.path)
+		var visited bool
+		actual := mustQueryFile(db, row.path, nil)
+		actual = mustQueryFile(db, row.path, &visited)
 		expect := fileInfo{
 			relPath:  row.path,
 			size:     row.size,
@@ -296,6 +298,9 @@ func TestQueryFile(t *testing.T) {
 		if actual != expect {
 			t.Errorf("actual: %+v", actual)
 			t.Errorf("expect: %+v", expect)
+		}
+		if visited != row.visited {
+			t.Errorf("Incorrect visited flag for %+v", row)
 		}
 	}
 }
