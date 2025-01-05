@@ -276,13 +276,15 @@ func mustClearVisitedFlag(tx *sql.Tx, relpath string) {
 	}
 	defer stmt.Close()
 
-	_, err = stmt.Exec(relpath)
+	res, err := stmt.Exec(relpath)
 	if err != nil {
 		logFatal("Failed to clear %s: %s", relpath, err.Error())
 	}
+	assertRowsAffected(res, 1)
 }
 
-func mustClearVisitedFlags(tx *sql.Tx, prefix string) {
+// Return number of rows affected.
+func mustClearVisitedFlags(tx *sql.Tx, prefix string) int64 {
 	if prefix != "" && prefix[len(prefix)-1] != '/' {
 		logFatal("prefix must end with '/'")
 	}
@@ -295,8 +297,13 @@ func mustClearVisitedFlags(tx *sql.Tx, prefix string) {
 	}
 	defer stmt.Close()
 
-	_, err = stmt.Exec(escapeForLike(prefix) + "%")
+	res, err := stmt.Exec(escapeForLike(prefix) + "%")
 	if err != nil {
 		logFatal("Failed to clear %s: %s", prefix, err.Error())
 	}
+	numRows, err := res.RowsAffected()
+	if err != nil {
+		logFatal("Failed to get rows affected: %s", err.Error())
+	}
+	return numRows
 }

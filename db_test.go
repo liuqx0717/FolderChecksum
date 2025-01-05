@@ -486,24 +486,15 @@ func TestClearVisitedFlag(t *testing.T) {
 
 	insertRowsToFiles(t, db, testDbRows[:])
 
-	tx := mustCreateTx(db)
-	// Clear a non-existing file
-	mustClearVisitedFlag(tx, "fileX")
-	// Clear an existing folder name
-	mustClearVisitedFlag(tx, "%dir1")
-	mustCommitTx(tx)
-	actualRows = getAllRowsFromFiles(t, db)
-	expectRows = copyAndSortFileRows(testDbRows[:])
-	verifyFileRows(t, actualRows, expectRows)
-
 	// Clear existing file names
-	tx = mustCreateTx(db)
+	tx := mustCreateTx(db)
 	for i, row := range expectRows {
 		mustClearVisitedFlag(tx, row.path)
 		expectRows[i].visited = false
 	}
 	mustCommitTx(tx)
 	actualRows = getAllRowsFromFiles(t, db)
+	expectRows = copyAndSortFileRows(testDbRows[:])
 	verifyFileRows(t, actualRows, expectRows)
 }
 
@@ -517,7 +508,7 @@ func TestClearVisitedFlags(t *testing.T) {
 	// Clear all files.
 	insertRowsToFiles(t, db, testDbRows[:])
 	tx := mustCreateTx(db)
-	mustClearVisitedFlags(tx, "")
+	n := mustClearVisitedFlags(tx, "")
 	mustCommitTx(tx)
 	actualRows = getAllRowsFromFiles(t, db)
 	expectRows = copyAndSortFileRows(testDbRows[:])
@@ -525,6 +516,9 @@ func TestClearVisitedFlags(t *testing.T) {
 		expectRows[i].visited = false
 	}
 	verifyFileRows(t, actualRows, expectRows)
+	if n != 5 {
+		t.Fatalf("Incorrect n=%d", n)
+	}
 	_, err := db.Exec("DELETE FROM files")
 	if err != nil {
 		t.Fatal(err)
@@ -533,7 +527,7 @@ func TestClearVisitedFlags(t *testing.T) {
 	// Clear files in %dir1.
 	insertRowsToFiles(t, db, testDbRows[:])
 	tx = mustCreateTx(db)
-	mustClearVisitedFlags(tx, "%dir1/")
+	n = mustClearVisitedFlags(tx, "%dir1/")
 	mustCommitTx(tx)
 	actualRows = getAllRowsFromFiles(t, db)
 	expectRows = copyAndSortFileRows(testDbRows[:])
@@ -543,6 +537,9 @@ func TestClearVisitedFlags(t *testing.T) {
 		}
 	}
 	verifyFileRows(t, actualRows, expectRows)
+	if n != 2 {
+		t.Fatalf("Incorrect n=%d", n)
+	}
 	_, err = db.Exec("DELETE FROM files")
 	if err != nil {
 		t.Fatal(err)
@@ -551,7 +548,7 @@ func TestClearVisitedFlags(t *testing.T) {
 	// Clear files in dir\_2.
 	insertRowsToFiles(t, db, testDbRows[:])
 	tx = mustCreateTx(db)
-	mustClearVisitedFlags(tx, `dir\_2/`)
+	n = mustClearVisitedFlags(tx, `dir\_2/`)
 	mustCommitTx(tx)
 	actualRows = getAllRowsFromFiles(t, db)
 	expectRows = copyAndSortFileRows(testDbRows[:])
@@ -561,6 +558,9 @@ func TestClearVisitedFlags(t *testing.T) {
 		}
 	}
 	verifyFileRows(t, actualRows, expectRows)
+	if n != 1 {
+		t.Fatalf("Incorrect n=%d", n)
+	}
 	_, err = db.Exec("DELETE FROM files")
 	if err != nil {
 		t.Fatal(err)
@@ -569,11 +569,14 @@ func TestClearVisitedFlags(t *testing.T) {
 	// Clear files in a non-existing folder.
 	insertRowsToFiles(t, db, testDbRows[:])
 	tx = mustCreateTx(db)
-	mustClearVisitedFlags(tx, `dirXXX/`)
+	n = mustClearVisitedFlags(tx, `dirXXX/`)
 	mustCommitTx(tx)
 	actualRows = getAllRowsFromFiles(t, db)
 	expectRows = copyAndSortFileRows(testDbRows[:])
 	verifyFileRows(t, actualRows, expectRows)
+	if n != 0 {
+		t.Fatalf("Incorrect n=%d", n)
+	}
 	_, err = db.Exec("DELETE FROM files")
 	if err != nil {
 		t.Fatal(err)
