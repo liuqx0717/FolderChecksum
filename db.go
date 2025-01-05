@@ -153,9 +153,19 @@ func mustMarkFile(stmt *sql.Stmt, relPath string) {
 }
 
 // Return nil or fileInfo.
-func mustQueryFile(db *sql.DB, relPath string) any {
-	stmt, err := db.Prepare(
-		`SELECT size, checksum FROM files WHERE path=?`)
+func mustQueryFile(dbOrTx any, relPath string) any {
+	var stmt *sql.Stmt
+	var err error
+	switch v := dbOrTx.(type) {
+	case *sql.DB:
+		stmt, err = v.Prepare(
+			`SELECT size, checksum FROM files WHERE path=?`)
+	case *sql.Tx:
+		stmt, err = v.Prepare(
+			`SELECT size, checksum FROM files WHERE path=?`)
+	default:
+		logFatal("dbOrTx has incorrect type")
+	}
 	if err != nil {
 		logFatal("Failed to prepare query %s: %s", relPath, err.Error())
 	}
@@ -250,4 +260,39 @@ func mustDeleteUnvisitedFiles(tx *sql.Tx, prefix string, expectN int64) {
 		logFatal("Failed to delete %s: %s", prefix, err.Error())
 	}
 	assertRowsAffected(res, expectN)
+}
+
+func mustClearVisitedFlag(tx *sql.Tx, relpath string) {
+	stmt, err := tx.Prepare(
+		`UPDATE files
+			SET visited=0
+			WHERE path=? AND visited=1`)
+	if err != nil {
+		logFatal("Failed to prepare clear %s: %s", relpath, err.Error())
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(relpath)
+	if err != nil {
+		logFatal("Failed to clear %s: %s", relpath, err.Error())
+	}
+}
+
+func mustClearVisitedFlags(tx *sql.Tx, prefix string) {
+	if prefix != "" && prefix[len(prefix)-1] != '/' {
+		logFatal("prefix must end with '/'")
+	}
+	stmt, err := tx.Prepare(
+		`UPDATE files
+			SET visited=0
+			WHERE path LIKE ? ESCAPE '\' AND visited=1`)
+	if err != nil {
+		logFatal("Failed to prepare clear %s: %s", prefix, err.Error())
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(escapeForLike(prefix) + "%")
+	if err != nil {
+		logFatal("Failed to clear %s: %s", prefix, err.Error())
+	}
 }

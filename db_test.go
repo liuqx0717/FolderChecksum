@@ -471,3 +471,106 @@ func TestDeleteUnvisitedFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestClearVisitedFlag(t *testing.T) {
+	db := prepareTestDb(t)
+	defer db.Close()
+
+	var actualRows []fileRow
+	var expectRows []fileRow
+
+	insertRowsToFiles(t, db, testDbRows[:])
+
+	tx := mustCreateTx(db)
+	// Clear a non-existing file
+	mustClearVisitedFlag(tx, "fileX")
+	// Clear an existing folder name
+	mustClearVisitedFlag(tx, "%dir1")
+	mustCommitTx(tx)
+	actualRows = getAllRowsFromFiles(t, db)
+	expectRows = copyAndSortFileRows(testDbRows[:])
+	verifyFileRows(t, actualRows, expectRows)
+
+	// Clear existing file names
+	tx = mustCreateTx(db)
+	for i, row := range expectRows {
+		mustClearVisitedFlag(tx, row.path)
+		expectRows[i].visited = false
+	}
+	mustCommitTx(tx)
+	actualRows = getAllRowsFromFiles(t, db)
+	verifyFileRows(t, actualRows, expectRows)
+}
+
+func TestClearVisitedFlags(t *testing.T) {
+	db := prepareTestDb(t)
+	defer db.Close()
+
+	var actualRows []fileRow
+	var expectRows []fileRow
+
+	// Clear all files.
+	insertRowsToFiles(t, db, testDbRows[:])
+	tx := mustCreateTx(db)
+	mustClearVisitedFlags(tx, "")
+	mustCommitTx(tx)
+	actualRows = getAllRowsFromFiles(t, db)
+	expectRows = copyAndSortFileRows(testDbRows[:])
+	for i := range expectRows {
+		expectRows[i].visited = false
+	}
+	verifyFileRows(t, actualRows, expectRows)
+	_, err := db.Exec("DELETE FROM files")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Clear files in %dir1.
+	insertRowsToFiles(t, db, testDbRows[:])
+	tx = mustCreateTx(db)
+	mustClearVisitedFlags(tx, "%dir1/")
+	mustCommitTx(tx)
+	actualRows = getAllRowsFromFiles(t, db)
+	expectRows = copyAndSortFileRows(testDbRows[:])
+	for i, row := range expectRows {
+		if strings.HasPrefix(row.path, "%dir1/") {
+			expectRows[i].visited = false
+		}
+	}
+	verifyFileRows(t, actualRows, expectRows)
+	_, err = db.Exec("DELETE FROM files")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Clear files in dir\_2.
+	insertRowsToFiles(t, db, testDbRows[:])
+	tx = mustCreateTx(db)
+	mustClearVisitedFlags(tx, `dir\_2/`)
+	mustCommitTx(tx)
+	actualRows = getAllRowsFromFiles(t, db)
+	expectRows = copyAndSortFileRows(testDbRows[:])
+	for i, row := range expectRows {
+		if strings.HasPrefix(row.path, `dir\_2/`) {
+			expectRows[i].visited = false
+		}
+	}
+	verifyFileRows(t, actualRows, expectRows)
+	_, err = db.Exec("DELETE FROM files")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Clear files in a non-existing folder.
+	insertRowsToFiles(t, db, testDbRows[:])
+	tx = mustCreateTx(db)
+	mustClearVisitedFlags(tx, `dirXXX/`)
+	mustCommitTx(tx)
+	actualRows = getAllRowsFromFiles(t, db)
+	expectRows = copyAndSortFileRows(testDbRows[:])
+	verifyFileRows(t, actualRows, expectRows)
+	_, err = db.Exec("DELETE FROM files")
+	if err != nil {
+		t.Fatal(err)
+	}
+}
