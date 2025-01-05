@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"flag"
 	"fmt"
 	"os"
@@ -38,6 +39,7 @@ var flg flags
 
 type config struct {
 	dbFile      string
+	db          *sql.DB
 	excludeList *regexp.Regexp
 	includeList *regexp.Regexp
 	followLinks bool
@@ -184,6 +186,7 @@ func flagsToConfig(f *flags) *config {
 		cfg.dbFile = filepath.Join(f.rootDir, f.dbFile)
 	}
 	cfg.dbFile = filepath.Clean(cfg.dbFile)
+	cfg.db = mustOpenDb(cfg.dbFile)
 
 	if containPathSep {
 		cfg.excludeList = getRegexFromList(f.excludeList)

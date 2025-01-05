@@ -17,4 +17,5 @@ func main() {
 	if cfg.followLinks {
 		logFatal("Option not implemented")
 	}
+	cfg.db.Close()
 }
