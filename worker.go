@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -23,6 +24,14 @@ type fileCheckMsg struct {
 type dbUpdateMsg struct {
 	opType string
 	info   fileInfo
+}
+
+func clearStats() {
+	stats.numFilesNew.Store(0)
+	stats.numFilesChanged.Store(0)
+	stats.numFilesDeleted.Store(0)
+	stats.numFilesUnchanged.Store(0)
+	stats.numVisitedFlagsCleared.Store(0)
 }
 
 func outputNewFile(relPath string) {
@@ -139,5 +148,112 @@ func fileCheckWorker(cfg *config, wg *sync.WaitGroup,
 	}
 
 	logDebug("Stopped fileCheckWorker")
+	wg.Done()
+}
+
+func verifyStats() {
+	numFilesNew := stats.numFilesNew.Load()
+	numFilesChanged := stats.numFilesChanged.Load()
+	numFilesDeleted := stats.numFilesDeleted.Load()
+	numFilesUnchanged := stats.numFilesUnchanged.Load()
+	numVisitedFlagsCleared := stats.numVisitedFlagsCleared.Load()
+
+	logInfo("stats: numFilesNew=%d numFilesChanged=%d "+
+		"numFilesDelete=%d numFilesUnchanged=%d numVisitedFlagsCleared=%d",
+		numFilesNew, numFilesChanged, numFilesDeleted,
+		numFilesUnchanged, numVisitedFlagsCleared)
+
+	if numVisitedFlagsCleared !=
+		numFilesNew+numFilesChanged+numFilesUnchanged {
+		logFatal("stats inconsistent: numVisitedFlagsCleared=%d, "+
+			"numFilesNew+numFilesChanged+numFilesUnchanged=%d",
+			numVisitedFlagsCleared,
+			numFilesNew+numFilesChanged+numFilesUnchanged)
+	}
+}
+
+// Output the unvisited files as deleted files, remove them from db, then
+// clear the "visited" flag in db.
+// Note that we can't use range query alone. Consider this case: the db
+// contains one record for a normal file named "aa", and multiple records
+// for the files under folder "aab/". Then the user use "aa" as the prefix.
+// We should first check the prefix itself ("aa"), then use range query on
+// the prefix with a trailing slash ("aa/").
+func mustHandleDeletedFiles(tx *sql.Tx, prefix string) {
+	numDeleted := int64(0)
+	numCleared := int64(0)
+	procUnvisitedFile := func(file *fileInfo) {
+		outputDeletedFile(file.relPath)
+		numDeleted++
+	}
+
+	if prefix == "" {
+		// Process all entries.
+		mustQueryUnvisitedFiles(tx, "", procUnvisitedFile)
+		mustDeleteUnvisitedFiles(tx, "", numDeleted)
+		numCleared = mustClearVisitedFlags(tx, "")
+		stats.numVisitedFlagsCleared.Add(numCleared)
+		return
+	}
+
+	if prefix[len(prefix)-1] == '/' {
+		logFatal("prefix '%s' has a trailing slash", prefix)
+	}
+
+	// Process "prefix"
+	file, visited := mustQueryFile(tx, prefix)
+	if file != nil {
+		f := file.(fileInfo)
+		if visited {
+			mustClearVisitedFlag(tx, prefix)
+			stats.numVisitedFlagsCleared.Add(1)
+		} else {
+			procUnvisitedFile(&f)
+			mustDeleteUnvisitedFile(tx, prefix)
+			numDeleted = 0
+		}
+	}
+
+	// Process "prefix/..."
+	mustQueryUnvisitedFiles(tx, prefix+"/", procUnvisitedFile)
+	mustDeleteUnvisitedFiles(tx, prefix+"/", numDeleted)
+	numCleared = mustClearVisitedFlags(tx, prefix+"/")
+	stats.numVisitedFlagsCleared.Add(numCleared)
+}
+
+func dbUpdateWorker(cfg *config, wg *sync.WaitGroup,
+	cIn <-chan dbUpdateMsg) {
+	// This worker creates a tx on its own. All db APIs should use it.
+	// I.e., don't use db.Prepare(), db.Exec(), etc.
+	logDebug("Started dbUpdateWorker")
+	tx := mustCreateTx(cfg.db)
+	insStmt := mustPrepareInsertFile(tx)
+	updStmt := mustPrepareUpdateAndMarkFile(tx)
+	mrkStmt := mustPrepareMarkFile(tx)
+
+	for msg := range cIn {
+		logDebug("updating: %+v", msg)
+		switch msg.opType {
+		case "I":
+			mustInsertFile(insStmt, &msg.info)
+		case "U":
+			mustUpdateAndMarkFile(updStmt, &msg.info)
+		case "M":
+			mustMarkFile(mrkStmt, msg.info.relPath)
+		case "D":
+			mustHandleDeletedFiles(tx, msg.info.relPath)
+		default:
+			logFatal("Unknown opType %s", msg.opType)
+		}
+	}
+
+	verifyStats()
+	if cfg.update {
+		mustCommitTx(tx)
+	} else {
+		tx.Rollback()
+	}
+
+	logDebug("Stopped dbUpdateWorker")
 	wg.Done()
 }

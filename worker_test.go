@@ -17,8 +17,8 @@ func fileCheckWorkerRunTests(t *testing.T, cfg *config,
 
 	// Send len(mIn) messages.
 	go func() {
-		for i := range mIn {
-			tx <- mIn[i]
+		for _, m := range mIn {
+			tx <- m
 		}
 		close(tx)
 	}()
@@ -274,4 +274,184 @@ func TestFileCheckWorkerSizeOnly(t *testing.T) {
 		{"U", fileInfo{"dir1/file1", 10, ""}},
 	}
 	fileCheckWorkerRunTests(t, &cfg, mIn, expect)
+}
+
+func dbUpdateWorkerRunTest(t *testing.T, cfg *config,
+	mIn []dbUpdateMsg, expectRows []fileRow) {
+	var wg sync.WaitGroup
+	tx := make(chan dbUpdateMsg)
+
+	clearStats()
+	wg.Add(1)
+	go dbUpdateWorker(cfg, &wg, tx)
+
+	for _, m := range mIn {
+		// In this test we don't create fileCheckWorker, so update the
+		// stats here.
+		switch m.opType {
+		case "I":
+			stats.numFilesNew.Add(1)
+		case "U":
+			stats.numFilesChanged.Add(1)
+		case "M":
+			stats.numFilesUnchanged.Add(1)
+		case "D":
+		default:
+			t.Fatalf("Unknown opType %s", m.opType)
+		}
+		tx <- m
+	}
+	close(tx)
+	wg.Wait()
+
+	actualRows := getAllRowsFromFiles(t, cfg.db)
+	verifyFileRows(t, actualRows, expectRows)
+}
+
+func TestDbUpdateWorker(t *testing.T) {
+	db := prepareTestDb(t)
+	defer db.Close()
+
+	defaultCfg := config{
+		db:     db,
+		update: false,
+	}
+
+	// Insert, update, mark.
+	cfg := defaultCfg
+	rows := []fileRow{
+		{
+			path:     "file1",
+			size:     5,
+			checksum: "aaa",
+			visited:  false,
+		},
+		{
+			path:     "dir1/file1",
+			size:     10,
+			checksum: "bbb",
+			visited:  false,
+		},
+	}
+	clearAndInsertRowsToFiles(t, db, rows)
+	mIn := []dbUpdateMsg{
+		{"I", fileInfo{"dir1/file2", 20, "ccc"}},
+		{"U", fileInfo{"dir1/file1", 20, "ccc"}},
+		{"M", fileInfo{"file1", 0, ""}},
+		{"D", fileInfo{"", 0, ""}},
+	}
+	expect := []fileRow{
+		{
+			path:     "dir1/file1",
+			size:     20,
+			checksum: "ccc",
+			visited:  false,
+		},
+		{
+			path:     "dir1/file2",
+			size:     20,
+			checksum: "ccc",
+			visited:  false,
+		},
+		{
+			path:     "file1",
+			size:     5,
+			checksum: "aaa",
+			visited:  false,
+		},
+	}
+	dbUpdateWorkerRunTest(t, &cfg, mIn, copyAndSortFileRows(rows))
+	cfg.update = true
+	dbUpdateWorkerRunTest(t, &cfg, mIn, expect)
+
+	// Originally dir1 was a folder in db. Then it becomes a file.
+	cfg = defaultCfg
+	rows = []fileRow{
+		{
+			path:     "file1",
+			size:     5,
+			checksum: "aaa",
+			visited:  false,
+		},
+		{
+			path:     "dir1/file1",
+			size:     10,
+			checksum: "bbb",
+			visited:  false,
+		},
+		{
+			path:     "dir1/file2",
+			size:     10,
+			checksum: "ccc",
+			visited:  false,
+		},
+	}
+	clearAndInsertRowsToFiles(t, db, rows)
+	mIn = []dbUpdateMsg{
+		{"I", fileInfo{"dir1", 20, "ddd"}},
+		{"D", fileInfo{"dir1", 0, ""}},
+	}
+	expect = []fileRow{
+		{
+			path:     "dir1",
+			size:     20,
+			checksum: "ddd",
+			visited:  false,
+		},
+		{
+			path:     "file1",
+			size:     5,
+			checksum: "aaa",
+			visited:  false,
+		},
+	}
+	dbUpdateWorkerRunTest(t, &cfg, mIn, copyAndSortFileRows(rows))
+	cfg.update = true
+	dbUpdateWorkerRunTest(t, &cfg, mIn, expect)
+
+	// Originally dir1 was a file in db. Then it becomes a folder.
+	cfg = defaultCfg
+	rows = []fileRow{
+		{
+			path:     "file1",
+			size:     5,
+			checksum: "aaa",
+			visited:  false,
+		},
+		{
+			path:     "dir1",
+			size:     5,
+			checksum: "bbb",
+			visited:  false,
+		},
+	}
+	clearAndInsertRowsToFiles(t, db, rows)
+	mIn = []dbUpdateMsg{
+		{"I", fileInfo{"dir1/file1", 10, "ccc"}},
+		{"I", fileInfo{"dir1/file2", 10, "ddd"}},
+		{"D", fileInfo{"dir1", 0, ""}},
+	}
+	expect = []fileRow{
+		{
+			path:     "dir1/file1",
+			size:     10,
+			checksum: "ccc",
+			visited:  false,
+		},
+		{
+			path:     "dir1/file2",
+			size:     10,
+			checksum: "ddd",
+			visited:  false,
+		},
+		{
+			path:     "file1",
+			size:     5,
+			checksum: "aaa",
+			visited:  false,
+		},
+	}
+	dbUpdateWorkerRunTest(t, &cfg, mIn, copyAndSortFileRows(rows))
+	cfg.update = true
+	dbUpdateWorkerRunTest(t, &cfg, mIn, expect)
 }
