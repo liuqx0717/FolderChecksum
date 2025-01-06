@@ -151,7 +151,7 @@ func fileCheckWorker(cfg *config, wg *sync.WaitGroup,
 	wg.Done()
 }
 
-func verifyStats() {
+func verifyStats(cfg *config) {
 	numFilesNew := stats.numFilesNew.Load()
 	numFilesChanged := stats.numFilesChanged.Load()
 	numFilesDeleted := stats.numFilesDeleted.Load()
@@ -163,12 +163,19 @@ func verifyStats() {
 		numFilesNew, numFilesChanged, numFilesDeleted,
 		numFilesUnchanged, numVisitedFlagsCleared)
 
-	if numVisitedFlagsCleared !=
-		numFilesNew+numFilesChanged+numFilesUnchanged {
-		logFatal("stats inconsistent: numVisitedFlagsCleared=%d, "+
-			"numFilesNew+numFilesChanged+numFilesUnchanged=%d",
-			numVisitedFlagsCleared,
-			numFilesNew+numFilesChanged+numFilesUnchanged)
+	if cfg.update {
+		if numVisitedFlagsCleared !=
+			numFilesNew+numFilesChanged+numFilesUnchanged {
+			logFatal("stats inconsistent: numVisitedFlagsCleared=%d, "+
+				"numFilesNew+numFilesChanged+numFilesUnchanged=%d",
+				numVisitedFlagsCleared,
+				numFilesNew+numFilesChanged+numFilesUnchanged)
+		}
+	} else {
+		if numVisitedFlagsCleared != 0 {
+			logFatal("numVisitedFlagsCleared=%d, expected 0",
+				numVisitedFlagsCleared)
+		}
 	}
 }
 
@@ -190,9 +197,11 @@ func mustHandleDeletedFiles(cfg *config, tx *sql.Tx, prefix string) {
 	if prefix == "" {
 		// Process all entries.
 		mustQueryUnvisitedFiles(tx, "", procUnvisitedFile)
-		mustDeleteUnvisitedFiles(tx, "", numDeleted)
-		numCleared = mustClearVisitedFlags(tx, "")
-		stats.numVisitedFlagsCleared.Add(numCleared)
+		if cfg.update {
+			mustDeleteUnvisitedFiles(tx, "", numDeleted)
+			numCleared = mustClearVisitedFlags(tx, "")
+			stats.numVisitedFlagsCleared.Add(numCleared)
+		}
 		return
 	}
 
@@ -205,20 +214,26 @@ func mustHandleDeletedFiles(cfg *config, tx *sql.Tx, prefix string) {
 	if file != nil {
 		f := file.(fileInfo)
 		if visited {
-			mustClearVisitedFlag(tx, prefix)
-			stats.numVisitedFlagsCleared.Add(1)
+			if cfg.update {
+				mustClearVisitedFlag(tx, prefix)
+				stats.numVisitedFlagsCleared.Add(1)
+			}
 		} else {
 			procUnvisitedFile(&f)
-			mustDeleteUnvisitedFile(tx, prefix)
-			numDeleted = 0
+			if cfg.update {
+				mustDeleteUnvisitedFile(tx, prefix)
+				numDeleted = 0
+			}
 		}
 	}
 
 	// Process "prefix/..."
 	mustQueryUnvisitedFiles(tx, prefix+"/", procUnvisitedFile)
-	mustDeleteUnvisitedFiles(tx, prefix+"/", numDeleted)
-	numCleared = mustClearVisitedFlags(tx, prefix+"/")
-	stats.numVisitedFlagsCleared.Add(numCleared)
+	if cfg.update {
+		mustDeleteUnvisitedFiles(tx, prefix+"/", numDeleted)
+		numCleared = mustClearVisitedFlags(tx, prefix+"/")
+		stats.numVisitedFlagsCleared.Add(numCleared)
+	}
 }
 
 func dbUpdateWorker(cfg *config, wg *sync.WaitGroup,
@@ -247,7 +262,7 @@ func dbUpdateWorker(cfg *config, wg *sync.WaitGroup,
 		}
 	}
 
-	verifyStats()
+	verifyStats(cfg)
 	if cfg.update {
 		mustCommitTx(tx)
 	} else {
