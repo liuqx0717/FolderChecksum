@@ -55,6 +55,7 @@ func TestFileCheckWorker(t *testing.T) {
 	// - rootDir
 	// | file1exc
 	// | file.exc
+	// | exclude
 	// | - dir1.exc
 	// | | incfile1.exc
 	rootDir := filepath.Join(t.TempDir(), "rootDir")
@@ -70,6 +71,10 @@ func TestFileCheckWorker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	err = os.WriteFile(filepath.Join(rootDir, "exclude"), []byte("file1"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
 	dir1 := filepath.Join(rootDir, "dir1.exc")
 	err = os.Mkdir(dir1, 0755)
 	if err != nil {
@@ -80,6 +85,7 @@ func TestFileCheckWorker(t *testing.T) {
 		t.Fatal(err)
 	}
 	mIn := []fileCheckMsg{
+		{"exclude", 5},
 		{"file1exc", 5},
 		{"file.exc", 5},
 		{"dir1.exc/incfile1.exc", 10},
@@ -90,7 +96,7 @@ func TestFileCheckWorker(t *testing.T) {
 
 	defaultCfg := config{
 		db:        db,
-		excludeRe: regexp.MustCompile(`^.*\.exc$`),
+		excludeRe: regexp.MustCompile(`^((.*\.exc)|(exclude))$`),
 		includeRe: regexp.MustCompile(`^(.*/)?inc[^/]*$`),
 		sizeOnly:  false,
 		update:    false,

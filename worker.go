@@ -77,8 +77,8 @@ func fileCheckWorker(id int, cfg *config, wg *sync.WaitGroup,
 
 	for msg := range cIn {
 		path := filepath.Join(cfg.rootDir, msg.relPath)
-		if shouldExcludePath(cfg, path) {
-			logInfo("(worker %d) skipped: %s", id, path)
+		if shouldExcludePath(cfg, msg.relPath) {
+			logInfo("skipped: %s", msg.relPath)
 			continue
 		}
 
@@ -89,7 +89,7 @@ func fileCheckWorker(id int, cfg *config, wg *sync.WaitGroup,
 			checksum: "",
 		}
 
-		logDebug("(worker %d) checking %s: %+v", id, path, infoInDb)
+		logDebug("(worker %d) checking %s: %+v", id, msg.relPath, infoInDb)
 
 		if infoInDb == nil {
 			// Db doesn't have this file.
@@ -136,7 +136,7 @@ func fileCheckWorker(id int, cfg *config, wg *sync.WaitGroup,
 		info.checksum = mustCalcChecksum(path, msg.size, cfg.sizeOnly)
 		if !dbHasChecksum {
 			logWarning("Db only has size info for '%s' but -sizeonly is "+
-				"not used.", path)
+				"not used.", msg.relPath)
 		}
 		if infoInDb.(fileInfo).checksum == info.checksum {
 			outputUnchangedFile(cfg, msg.relPath)

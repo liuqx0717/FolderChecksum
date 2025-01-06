@@ -31,7 +31,7 @@ func mustOpenDb(file string) *sql.DB {
 	//
 	// If the write txn is too big, it may try to flush something to
 	// disk even when COMMIT is not called yet, and the readers will
-	// fail with "database is locked" error. Use WAL mode can prevent
+	// fail with "database is locked" error. Using WAL mode can prevent
 	// this.
 	db, err := sql.Open("sqlite3", "file:"+file+
 		"?_journal_mode=WAL&_txlock=immediate")
