@@ -19,6 +19,7 @@ func main() {
 	if cfg.followLinks {
 		logFatal("Option not implemented")
 	}
+	logInfo("Using database file: %s", cfg.dbFile)
 	mustCreateFilesTableIfNeeded(cfg.db)
 
 	// Start workers (1 dbUpdateWorker and j fileCheckWorker).
