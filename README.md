@@ -97,13 +97,20 @@ fs_test.go             5713   8abf900b5a79a29085eaac71a5b93fba  0
 ...
 ```
 
-`visited` is used internally to detect deleted files.
+`path` is always separated by `'/'` (even on Windows), so the database
+file generated on one platform can be used later on different platforms.
+`visited` is used internally to detect deleted files. 
 
 The database is always updated in a single transaction, i.e., updated
 atomically in each invocation of the tool. Running multiple instances of
-this tool on the same database file is **not** recommended.
+this tool on the same database file is **not** recommended (SQLite only
+supports 1 concurrent write transaction anyway).
 
 # Full usage
+
+Note that part of the help message is generated using runtime information
+(number of CPU cores, path separator `'/'` or `'\'`, etc.). To get the most
+accurate help message on your system, please use `-h` by yourself.
 
 ```
 Usage:
