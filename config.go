@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -45,6 +46,7 @@ type config struct {
 	followLinks bool
 	sizeOnly    bool
 	update      bool
+	outFile     io.Writer
 	rootDir     string
 	prefix      []string
 }
@@ -199,6 +201,7 @@ func flagsToConfig(f *flags) *config {
 	cfg.followLinks = f.followLinks
 	cfg.sizeOnly = f.sizeOnly
 	cfg.update = f.update
+	cfg.outFile = os.Stdout
 	cfg.rootDir = filepath.Clean(f.rootDir)
 
 	for _, prefix := range f.prefix {

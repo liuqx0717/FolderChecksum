@@ -3,15 +3,22 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
 
 func fileCheckWorkerRunTests(t *testing.T, cfg *config,
-	mIn []fileCheckMsg, expectOut []dbUpdateMsg) {
+	mIn []fileCheckMsg, expectMOut []dbUpdateMsg, expectStdout string) {
 	var wg sync.WaitGroup
+	var builder strings.Builder
 	tx := make(chan fileCheckMsg)
 	rx := make(chan dbUpdateMsg)
+
+	origOutFile := cfg.outFile
+	defer func() { cfg.outFile = origOutFile }()
+	cfg.outFile = &builder
+
 	wg.Add(1)
 	go fileCheckWorker(cfg, &wg, tx, rx)
 
@@ -24,7 +31,7 @@ func fileCheckWorkerRunTests(t *testing.T, cfg *config,
 	}()
 
 	// Receive len(expectout) messages.
-	for i, expect := range expectOut {
+	for i, expect := range expectMOut {
 		actual := <-rx
 		if actual != expect {
 			t.Errorf("actualOut[%d]: %+v", i, actual)
@@ -33,8 +40,14 @@ func fileCheckWorkerRunTests(t *testing.T, cfg *config,
 		}
 	}
 	close(rx)
-
 	wg.Wait()
+
+	actualStdOut := builder.String()
+	if actualStdOut != expectStdout {
+		t.Errorf("actualStdout: %s", actualStdOut)
+		t.Errorf("expectStdout: %s", expectStdout)
+		t.FailNow()
+	}
 }
 
 func TestFileCheckWorker(t *testing.T) {
@@ -93,17 +106,19 @@ func TestFileCheckWorker(t *testing.T) {
 		},
 	}
 	clearAndInsertRowsToFiles(t, db, rows)
-	expect := []dbUpdateMsg{
+	expectMOut := []dbUpdateMsg{
 		{"M", fileInfo{"file1", 5, "826e8142e6baabe8af779f5f490cf5f5"}},
 		{"M", fileInfo{"dir1/file1", 10, "a09ebcef8ab11daef0e33e4394ea775f"}},
 	}
-	fileCheckWorkerRunTests(t, &cfg, mIn, expect)
+	expectStdout := "unchanged: file1\n" +
+		"changed: dir1/file1\n"
+	fileCheckWorkerRunTests(t, &cfg, mIn, expectMOut, expectStdout)
 	cfg.update = true
-	expect = []dbUpdateMsg{
+	expectMOut = []dbUpdateMsg{
 		{"M", fileInfo{"file1", 5, "826e8142e6baabe8af779f5f490cf5f5"}},
 		{"U", fileInfo{"dir1/file1", 10, "a09ebcef8ab11daef0e33e4394ea775f"}},
 	}
-	fileCheckWorkerRunTests(t, &cfg, mIn, expect)
+	fileCheckWorkerRunTests(t, &cfg, mIn, expectMOut, expectStdout)
 
 	// New files.
 	cfg = defaultCfg
@@ -116,14 +131,16 @@ func TestFileCheckWorker(t *testing.T) {
 		},
 	}
 	clearAndInsertRowsToFiles(t, db, rows)
-	expect = []dbUpdateMsg{
+	expectMOut = []dbUpdateMsg{
 		{"I", fileInfo{"file1", 5, "826e8142e6baabe8af779f5f490cf5f5"}},
 		{"I", fileInfo{"dir1/file1", 10, "a09ebcef8ab11daef0e33e4394ea775f"}},
 	}
+	expectStdout = "new: file1\n" +
+		"new: dir1/file1\n"
 	// When cfg.update is false, expect empty dbUpdateMsg.
-	fileCheckWorkerRunTests(t, &cfg, mIn, []dbUpdateMsg{})
+	fileCheckWorkerRunTests(t, &cfg, mIn, []dbUpdateMsg{}, expectStdout)
 	cfg.update = true
-	fileCheckWorkerRunTests(t, &cfg, mIn, expect)
+	fileCheckWorkerRunTests(t, &cfg, mIn, expectMOut, expectStdout)
 
 	// Changed files.
 	cfg = defaultCfg
@@ -143,17 +160,19 @@ func TestFileCheckWorker(t *testing.T) {
 		},
 	}
 	clearAndInsertRowsToFiles(t, db, rows)
-	expect = []dbUpdateMsg{
+	expectMOut = []dbUpdateMsg{
 		{"M", fileInfo{"file1", 5, ""}},
 		{"M", fileInfo{"dir1/file1", 10, "a09ebcef8ab11daef0e33e4394ea775f"}},
 	}
-	fileCheckWorkerRunTests(t, &cfg, mIn, expect)
+	expectStdout = "changed: file1\n" +
+		"changed: dir1/file1\n"
+	fileCheckWorkerRunTests(t, &cfg, mIn, expectMOut, expectStdout)
 	cfg.update = true
-	expect = []dbUpdateMsg{
+	expectMOut = []dbUpdateMsg{
 		{"U", fileInfo{"file1", 5, "826e8142e6baabe8af779f5f490cf5f5"}},
 		{"U", fileInfo{"dir1/file1", 10, "a09ebcef8ab11daef0e33e4394ea775f"}},
 	}
-	fileCheckWorkerRunTests(t, &cfg, mIn, expect)
+	fileCheckWorkerRunTests(t, &cfg, mIn, expectMOut, expectStdout)
 
 }
 
@@ -213,17 +232,19 @@ func TestFileCheckWorkerSizeOnly(t *testing.T) {
 		},
 	}
 	clearAndInsertRowsToFiles(t, db, rows)
-	expect := []dbUpdateMsg{
+	expectMOut := []dbUpdateMsg{
 		{"M", fileInfo{"file1", 5, ""}},
 		{"M", fileInfo{"dir1/file1", 10, ""}},
 	}
-	fileCheckWorkerRunTests(t, &cfg, mIn, expect)
+	expectStdout := "unchanged: file1\n" +
+		"unchanged: dir1/file1\n"
+	fileCheckWorkerRunTests(t, &cfg, mIn, expectMOut, expectStdout)
 	cfg.update = true
-	expect = []dbUpdateMsg{
+	expectMOut = []dbUpdateMsg{
 		{"U", fileInfo{"file1", 5, ""}},
 		{"M", fileInfo{"dir1/file1", 10, ""}},
 	}
-	fileCheckWorkerRunTests(t, &cfg, mIn, expect)
+	fileCheckWorkerRunTests(t, &cfg, mIn, expectMOut, expectStdout)
 
 	// New files.
 	cfg = defaultCfg
@@ -236,14 +257,16 @@ func TestFileCheckWorkerSizeOnly(t *testing.T) {
 		},
 	}
 	clearAndInsertRowsToFiles(t, db, rows)
-	expect = []dbUpdateMsg{
+	expectMOut = []dbUpdateMsg{
 		{"I", fileInfo{"file1", 5, ""}},
 		{"I", fileInfo{"dir1/file1", 10, ""}},
 	}
+	expectStdout = "new: file1\n" +
+		"new: dir1/file1\n"
 	// When cfg.update is false, expect empty dbUpdateMsg.
-	fileCheckWorkerRunTests(t, &cfg, mIn, []dbUpdateMsg{})
+	fileCheckWorkerRunTests(t, &cfg, mIn, []dbUpdateMsg{}, expectStdout)
 	cfg.update = true
-	fileCheckWorkerRunTests(t, &cfg, mIn, expect)
+	fileCheckWorkerRunTests(t, &cfg, mIn, expectMOut, expectStdout)
 
 	// Changed files.
 	cfg = defaultCfg
@@ -263,23 +286,30 @@ func TestFileCheckWorkerSizeOnly(t *testing.T) {
 		},
 	}
 	clearAndInsertRowsToFiles(t, db, rows)
-	expect = []dbUpdateMsg{
+	expectMOut = []dbUpdateMsg{
 		{"M", fileInfo{"file1", 5, ""}},
 		{"M", fileInfo{"dir1/file1", 10, ""}},
 	}
-	fileCheckWorkerRunTests(t, &cfg, mIn, expect)
+	expectStdout = "changed: file1\n" +
+		"changed: dir1/file1\n"
+	fileCheckWorkerRunTests(t, &cfg, mIn, expectMOut, expectStdout)
 	cfg.update = true
-	expect = []dbUpdateMsg{
+	expectMOut = []dbUpdateMsg{
 		{"U", fileInfo{"file1", 5, ""}},
 		{"U", fileInfo{"dir1/file1", 10, ""}},
 	}
-	fileCheckWorkerRunTests(t, &cfg, mIn, expect)
+	fileCheckWorkerRunTests(t, &cfg, mIn, expectMOut, expectStdout)
 }
 
 func dbUpdateWorkerRunTest(t *testing.T, cfg *config,
-	mIn []dbUpdateMsg, expectRows []fileRow) {
+	mIn []dbUpdateMsg, expectRows []fileRow, expectStdout string) {
 	var wg sync.WaitGroup
+	var builder strings.Builder
 	tx := make(chan dbUpdateMsg)
+
+	origOutFile := cfg.outFile
+	defer func() { cfg.outFile = origOutFile }()
+	cfg.outFile = &builder
 
 	clearStats()
 	wg.Add(1)
@@ -306,6 +336,13 @@ func dbUpdateWorkerRunTest(t *testing.T, cfg *config,
 
 	actualRows := getAllRowsFromFiles(t, cfg.db)
 	verifyFileRows(t, actualRows, expectRows)
+
+	actualStdOut := builder.String()
+	if actualStdOut != expectStdout {
+		t.Errorf("actualStdout: %s", actualStdOut)
+		t.Errorf("expectStdout: %s", expectStdout)
+		t.FailNow()
+	}
 }
 
 func TestDbUpdateWorker(t *testing.T) {
@@ -340,7 +377,7 @@ func TestDbUpdateWorker(t *testing.T) {
 		{"M", fileInfo{"file1", 0, ""}},
 		{"D", fileInfo{"", 0, ""}},
 	}
-	expect := []fileRow{
+	expectRows := []fileRow{
 		{
 			path:     "dir1/file1",
 			size:     20,
@@ -360,9 +397,10 @@ func TestDbUpdateWorker(t *testing.T) {
 			visited:  false,
 		},
 	}
-	dbUpdateWorkerRunTest(t, &cfg, mIn, copyAndSortFileRows(rows))
+	expectStdout := ""
+	dbUpdateWorkerRunTest(t, &cfg, mIn, copyAndSortFileRows(rows), expectStdout)
 	cfg.update = true
-	dbUpdateWorkerRunTest(t, &cfg, mIn, expect)
+	dbUpdateWorkerRunTest(t, &cfg, mIn, expectRows, expectStdout)
 
 	// Originally dir1 was a folder in db. Then it becomes a file.
 	cfg = defaultCfg
@@ -391,7 +429,7 @@ func TestDbUpdateWorker(t *testing.T) {
 		{"I", fileInfo{"dir1", 20, "ddd"}},
 		{"D", fileInfo{"dir1", 0, ""}},
 	}
-	expect = []fileRow{
+	expectRows = []fileRow{
 		{
 			path:     "dir1",
 			size:     20,
@@ -405,9 +443,11 @@ func TestDbUpdateWorker(t *testing.T) {
 			visited:  false,
 		},
 	}
-	dbUpdateWorkerRunTest(t, &cfg, mIn, copyAndSortFileRows(rows))
+	expectStdout = "deleted: dir1/file1\n" +
+		"deleted: dir1/file2\n"
+	dbUpdateWorkerRunTest(t, &cfg, mIn, copyAndSortFileRows(rows), expectStdout)
 	cfg.update = true
-	dbUpdateWorkerRunTest(t, &cfg, mIn, expect)
+	dbUpdateWorkerRunTest(t, &cfg, mIn, expectRows, expectStdout)
 
 	// Originally dir1 was a file in db. Then it becomes a folder.
 	cfg = defaultCfg
@@ -431,7 +471,7 @@ func TestDbUpdateWorker(t *testing.T) {
 		{"I", fileInfo{"dir1/file2", 10, "ddd"}},
 		{"D", fileInfo{"dir1", 0, ""}},
 	}
-	expect = []fileRow{
+	expectRows = []fileRow{
 		{
 			path:     "dir1/file1",
 			size:     10,
@@ -451,7 +491,8 @@ func TestDbUpdateWorker(t *testing.T) {
 			visited:  false,
 		},
 	}
-	dbUpdateWorkerRunTest(t, &cfg, mIn, copyAndSortFileRows(rows))
+	expectStdout = "deleted: dir1\n"
+	dbUpdateWorkerRunTest(t, &cfg, mIn, copyAndSortFileRows(rows), expectStdout)
 	cfg.update = true
-	dbUpdateWorkerRunTest(t, &cfg, mIn, expect)
+	dbUpdateWorkerRunTest(t, &cfg, mIn, expectRows, expectStdout)
 }

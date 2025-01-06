@@ -34,26 +34,26 @@ func clearStats() {
 	stats.numVisitedFlagsCleared.Store(0)
 }
 
-func outputNewFile(relPath string) {
-	fmt.Println("new:", relPath)
+func outputNewFile(cfg *config, relPath string) {
+	fmt.Fprintln(cfg.outFile, "new:", relPath)
 	logDebug("new: %s", relPath)
 	stats.numFilesNew.Add(1)
 }
 
-func outputChangedFile(relPath string) {
-	fmt.Println("changed:", relPath)
+func outputChangedFile(cfg *config, relPath string) {
+	fmt.Fprintln(cfg.outFile, "changed:", relPath)
 	logDebug("changed: %s", relPath)
 	stats.numFilesChanged.Add(1)
 }
 
-func outputDeletedFile(relPath string) {
-	fmt.Println("deleted:", relPath)
+func outputDeletedFile(cfg *config, relPath string) {
+	fmt.Fprintln(cfg.outFile, "deleted:", relPath)
 	logDebug("deleted: %s", relPath)
 	stats.numFilesDeleted.Add(1)
 }
 
-func outputUnchangedFile(relPath string) {
-	logDebug("unchanged: %s", relPath)
+func outputUnchangedFile(cfg *config, relPath string) {
+	fmt.Fprintln(cfg.outFile, "unchanged:", relPath)
 	stats.numFilesUnchanged.Add(1)
 }
 
@@ -86,7 +86,7 @@ func fileCheckWorker(cfg *config, wg *sync.WaitGroup,
 
 		if infoInDb == nil {
 			// Db doesn't have this file.
-			outputNewFile(msg.relPath)
+			outputNewFile(cfg, msg.relPath)
 			if cfg.update {
 				info.checksum = mustCalcChecksum(path, msg.size, cfg.sizeOnly)
 				// Insert the file into db.
@@ -97,7 +97,7 @@ func fileCheckWorker(cfg *config, wg *sync.WaitGroup,
 
 		if infoInDb.(fileInfo).size != msg.size {
 			// Db has this file, but size is different.
-			outputChangedFile(msg.relPath)
+			outputChangedFile(cfg, msg.relPath)
 			if cfg.update {
 				info.checksum = mustCalcChecksum(path, msg.size, cfg.sizeOnly)
 				// Update the file in db.
@@ -114,7 +114,7 @@ func fileCheckWorker(cfg *config, wg *sync.WaitGroup,
 		// Db has this file, size is the same. The file is deemed unchanged
 		// in sizeOnly mode.
 		if cfg.sizeOnly {
-			outputUnchangedFile(msg.relPath)
+			outputUnchangedFile(cfg, msg.relPath)
 			if dbHasChecksum && cfg.update {
 				// Clear the original checksum in db.
 				cOut <- dbUpdateMsg{"U", info}
@@ -132,11 +132,11 @@ func fileCheckWorker(cfg *config, wg *sync.WaitGroup,
 				"not used.", path)
 		}
 		if infoInDb.(fileInfo).checksum == info.checksum {
-			outputUnchangedFile(msg.relPath)
+			outputUnchangedFile(cfg, msg.relPath)
 			// Mark the file visited.
 			cOut <- dbUpdateMsg{"M", info}
 		} else {
-			outputChangedFile(msg.relPath)
+			outputChangedFile(cfg, msg.relPath)
 			if cfg.update {
 				// Update the file in db.
 				cOut <- dbUpdateMsg{"U", info}
@@ -179,11 +179,11 @@ func verifyStats() {
 // for the files under folder "aab/". Then the user use "aa" as the prefix.
 // We should first check the prefix itself ("aa"), then use range query on
 // the prefix with a trailing slash ("aa/").
-func mustHandleDeletedFiles(tx *sql.Tx, prefix string) {
+func mustHandleDeletedFiles(cfg *config, tx *sql.Tx, prefix string) {
 	numDeleted := int64(0)
 	numCleared := int64(0)
 	procUnvisitedFile := func(file *fileInfo) {
-		outputDeletedFile(file.relPath)
+		outputDeletedFile(cfg, file.relPath)
 		numDeleted++
 	}
 
@@ -241,7 +241,7 @@ func dbUpdateWorker(cfg *config, wg *sync.WaitGroup,
 		case "M":
 			mustMarkFile(mrkStmt, msg.info.relPath)
 		case "D":
-			mustHandleDeletedFiles(tx, msg.info.relPath)
+			mustHandleDeletedFiles(cfg, tx, msg.info.relPath)
 		default:
 			logFatal("Unknown opType %s", msg.opType)
 		}
