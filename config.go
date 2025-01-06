@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 )
 
@@ -26,6 +27,7 @@ func (arr *flagValues) Set(value string) error {
 type flags struct {
 	version     bool
 	logLevel    int
+	j           int
 	dbFile      string
 	excludeList flagValues
 	includeList flagValues
@@ -39,6 +41,7 @@ type flags struct {
 var flg flags
 
 type config struct {
+	j           int
 	dbFile      string
 	db          *sql.DB        // thread safe
 	excludeRe   *regexp.Regexp // thread safe
@@ -117,9 +120,12 @@ func init() {
 	}
 	flag.BoolVar(&flg.version, "version", false,
 		"Display version number and exit.\n")
-	flag.IntVar(&flg.logLevel, "loglevel", DEBUG,
+	flag.IntVar(&flg.logLevel, "loglevel", INFO,
 		"Set log level (ERROR=0, WARNING=1, INFO=2, DEBUG=3). Logs greater\n"+
 			"than or equal to this level will be printed to stderr.\n")
+	flag.IntVar(&flg.j, "j", runtime.NumCPU(),
+		"Set the number of workers to parallelly read the files. For SSD\n"+
+			"only. Use 1 if <rootdir> is on a HDD.\n")
 	flag.StringVar(&flg.dbFile, "dbfile", ".checksum.db",
 		"Set database file name. If it doesn't contain any "+s+", the file\n"+
 			"will be put into <rootdir> and will be automatically added to the\n"+
@@ -181,6 +187,10 @@ func flagsToConfig(f *flags) *config {
 	}
 
 	logLevel = f.logLevel
+	if flg.j <= 0 {
+		logFatal("j must >= 1")
+	}
+	cfg.j = flg.j
 
 	if containPathSep {
 		cfg.dbFile = f.dbFile
@@ -194,7 +204,9 @@ func flagsToConfig(f *flags) *config {
 		cfg.excludeRe = getRegexFromList(f.excludeList)
 	} else {
 		cfg.excludeRe = getRegexFromList(
-			append(f.excludeList, regexp.QuoteMeta(f.dbFile)))
+			append(f.excludeList,
+				regexp.QuoteMeta(f.dbFile),
+				regexp.QuoteMeta(f.dbFile+"-journal")))
 	}
 
 	cfg.includeRe = getRegexFromList(f.includeList)

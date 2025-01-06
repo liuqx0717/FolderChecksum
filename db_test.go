@@ -175,7 +175,8 @@ func prepareTestDb(t *testing.T) *sql.DB {
 	dbFile := filepath.Join(t.TempDir(), "test.db")
 
 	db := mustOpenDb(dbFile)
-	mustCreateFilesTable(db)
+	mustCreateFilesTableIfNeeded(db)
+	mustCreateFilesTableIfNeeded(db)
 	return db
 }
 

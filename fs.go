@@ -49,9 +49,9 @@ func dirMustExist(path string) {
 //
 // By default symlinks in rootDir and prefix are followed and others
 // are skipped. When followSymLinks is true, follow all the links.
-func mustWalkDir(rootDir string, prefix string, followSymLinks bool,
+func mustWalkDir(rootDir string, prefix string, followLinks bool,
 	procOneFile func(relPath string, size int64)) {
-	if followSymLinks {
+	if followLinks {
 		logFatal("followSymLinks not implemented")
 	}
 

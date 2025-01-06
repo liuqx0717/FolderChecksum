@@ -46,9 +46,9 @@ func mustCommitTx(tx *sql.Tx) {
 	}
 }
 
-func mustCreateFilesTable(db *sql.DB) {
+func mustCreateFilesTableIfNeeded(db *sql.DB) {
 	sqlStr :=
-		`CREATE TABLE files (
+		`CREATE TABLE IF NOT EXISTS files (
 	    	path TEXT NOT NULL PRIMARY KEY,
 			size INT NOT NULL,
 			checksum TEXT NULL,

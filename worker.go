@@ -36,24 +36,21 @@ func clearStats() {
 
 func outputNewFile(cfg *config, relPath string) {
 	fmt.Fprintln(cfg.outFile, "new:", relPath)
-	logDebug("new: %s", relPath)
 	stats.numFilesNew.Add(1)
 }
 
 func outputChangedFile(cfg *config, relPath string) {
 	fmt.Fprintln(cfg.outFile, "changed:", relPath)
-	logDebug("changed: %s", relPath)
 	stats.numFilesChanged.Add(1)
 }
 
 func outputDeletedFile(cfg *config, relPath string) {
 	fmt.Fprintln(cfg.outFile, "deleted:", relPath)
-	logDebug("deleted: %s", relPath)
 	stats.numFilesDeleted.Add(1)
 }
 
 func outputUnchangedFile(cfg *config, relPath string) {
-	fmt.Fprintln(cfg.outFile, "unchanged:", relPath)
+	logDebug("unchanged: %s", relPath)
 	stats.numFilesUnchanged.Add(1)
 }
 
@@ -73,15 +70,15 @@ func shouldExcludePath(cfg *config, relPath string) bool {
 		!cfg.includeRe.MatchString(relPath)
 }
 
-func fileCheckWorker(cfg *config, wg *sync.WaitGroup,
+func fileCheckWorker(id int, cfg *config, wg *sync.WaitGroup,
 	cIn <-chan fileCheckMsg, cOut chan<- dbUpdateMsg) {
 	// This worker doesn't create any tx on its own.
-	logDebug("Started fileCheckWorker")
+	logDebug("Started fileCheckWorker %d", id)
 
 	for msg := range cIn {
 		path := filepath.Join(cfg.rootDir, msg.relPath)
 		if shouldExcludePath(cfg, path) {
-			logInfo("skipped: %s", path)
+			logInfo("(worker %d) skipped: %s", id, path)
 			continue
 		}
 
@@ -92,7 +89,7 @@ func fileCheckWorker(cfg *config, wg *sync.WaitGroup,
 			checksum: "",
 		}
 
-		logDebug("checking %s: %+v", path, infoInDb)
+		logDebug("(worker %d) checking %s: %+v", id, path, infoInDb)
 
 		if infoInDb == nil {
 			// Db doesn't have this file.
@@ -157,7 +154,7 @@ func fileCheckWorker(cfg *config, wg *sync.WaitGroup,
 		}
 	}
 
-	logDebug("Stopped fileCheckWorker")
+	logDebug("Stopped fileCheckWorker %d", id)
 	wg.Done()
 }
 
@@ -169,7 +166,7 @@ func verifyStats(cfg *config) {
 	numVisitedFlagsCleared := stats.numVisitedFlagsCleared.Load()
 
 	logInfo("stats: numFilesNew=%d numFilesChanged=%d "+
-		"numFilesDelete=%d numFilesUnchanged=%d numVisitedFlagsCleared=%d",
+		"numFilesDeleted=%d numFilesUnchanged=%d numVisitedFlagsCleared=%d",
 		numFilesNew, numFilesChanged, numFilesDeleted,
 		numFilesUnchanged, numVisitedFlagsCleared)
 

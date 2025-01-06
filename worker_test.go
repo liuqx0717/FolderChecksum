@@ -21,7 +21,7 @@ func fileCheckWorkerRunTests(t *testing.T, cfg *config,
 	cfg.outFile = &builder
 
 	wg.Add(1)
-	go fileCheckWorker(cfg, &wg, tx, rx)
+	go fileCheckWorker(0, cfg, &wg, tx, rx)
 
 	// Send len(mIn) messages.
 	go func() {
