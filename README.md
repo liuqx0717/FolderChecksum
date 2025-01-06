@@ -1,9 +1,8 @@
 # Overview
 
 This tool saves the current information of a folder to a database file.
-Later the database file can be used to determine if anything has changed
-in that folder. Metadata changes (modify/access time, permissions, etc)
-are ignored.
+Later the database file can be used to track the changes in that folder.
+Metadata changes (modify/access time, permissions, etc) are ignored.
 
 Usage:
 
