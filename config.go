@@ -161,7 +161,7 @@ func parsePositionalArgs() {
 }
 
 func getRegexFromList(patterns []string) *regexp.Regexp {
-	regStr := "^"
+	regStr := "^("
 	for _, pattern := range patterns {
 		if _, err := regexp.Compile(pattern); err != nil {
 			logFatal("Invalid regex pattern '%s': %s", pattern, err.Error())
@@ -171,7 +171,7 @@ func getRegexFromList(patterns []string) *regexp.Regexp {
 	if regStr[len(regStr)-1] == '|' {
 		regStr = regStr[:len(regStr)-1]
 	}
-	regStr += "$"
+	regStr += ")$"
 
 	logDebug("regStr: %s", regStr)
 	return regexp.MustCompile(regStr)
@@ -206,7 +206,8 @@ func flagsToConfig(f *flags) *config {
 		cfg.excludeRe = getRegexFromList(
 			append(f.excludeList,
 				regexp.QuoteMeta(f.dbFile),
-				regexp.QuoteMeta(f.dbFile+"-journal")))
+				regexp.QuoteMeta(f.dbFile+"-wal"),
+				regexp.QuoteMeta(f.dbFile+"-shm")))
 	}
 
 	cfg.includeRe = getRegexFromList(f.includeList)

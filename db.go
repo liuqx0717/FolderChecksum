@@ -22,8 +22,19 @@ func escapeForLike(literal string) string {
 
 // The user should call Close() on the return value.
 func mustOpenDb(file string) *sql.DB {
+	// In the default ROLLBACK mode, readers can be active at the
+	// beginning of a write, before any content is flushed to disk
+	// and while all changes are still held in the writer's private
+	// memory space. But before any changes are made to the database
+	// file on disk, all readers must be (temporarily) expelled in
+	// order to give the writer exclusive access to the database file.
+	//
+	// If the write txn is too big, it may try to flush something to
+	// disk even when COMMIT is not called yet, and the readers will
+	// fail with "database is locked" error. Use WAL mode can prevent
+	// this.
 	db, err := sql.Open("sqlite3", "file:"+file+
-		"?_journal_mode=DELETE&_txlock=immediate")
+		"?_journal_mode=WAL&_txlock=immediate")
 	if err != nil {
 		logFatal("Failed to open '%s': %s", file, err.Error())
 	}
