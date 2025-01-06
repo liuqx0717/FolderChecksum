@@ -119,8 +119,7 @@ func TestFileCheckWorker(t *testing.T) {
 		{"M", fileInfo{"file1exc", 5, "826e8142e6baabe8af779f5f490cf5f5"}},
 		{"M", fileInfo{"dir1.exc/incfile1.exc", 10, "a09ebcef8ab11daef0e33e4394ea775f"}},
 	}
-	expectStdout := "unchanged: file1exc\n" +
-		"changed: dir1.exc/incfile1.exc\n"
+	expectStdout := "changed: dir1.exc/incfile1.exc\n"
 	fileCheckWorkerRunTests(t, &cfg, mIn, expectMOut, expectStdout)
 	cfg.update = true
 	expectMOut = []dbUpdateMsg{
@@ -246,8 +245,7 @@ func TestFileCheckWorkerSizeOnly(t *testing.T) {
 		{"M", fileInfo{"file1", 5, ""}},
 		{"M", fileInfo{"dir1/file1", 10, ""}},
 	}
-	expectStdout := "unchanged: file1\n" +
-		"unchanged: dir1/file1\n"
+	expectStdout := ""
 	fileCheckWorkerRunTests(t, &cfg, mIn, expectMOut, expectStdout)
 	cfg.update = true
 	expectMOut = []dbUpdateMsg{
