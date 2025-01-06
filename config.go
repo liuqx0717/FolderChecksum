@@ -41,8 +41,8 @@ var flg flags
 type config struct {
 	dbFile      string
 	db          *sql.DB        // thread safe
-	excludeList *regexp.Regexp // thread safe
-	includeList *regexp.Regexp // thread safe
+	excludeRe   *regexp.Regexp // thread safe
+	includeRe   *regexp.Regexp // thread safe
 	followLinks bool
 	sizeOnly    bool
 	update      bool
@@ -191,13 +191,13 @@ func flagsToConfig(f *flags) *config {
 	cfg.db = mustOpenDb(cfg.dbFile)
 
 	if containPathSep {
-		cfg.excludeList = getRegexFromList(f.excludeList)
+		cfg.excludeRe = getRegexFromList(f.excludeList)
 	} else {
-		cfg.excludeList = getRegexFromList(
+		cfg.excludeRe = getRegexFromList(
 			append(f.excludeList, regexp.QuoteMeta(f.dbFile)))
 	}
 
-	cfg.includeList = getRegexFromList(f.includeList)
+	cfg.includeRe = getRegexFromList(f.includeList)
 	cfg.followLinks = f.followLinks
 	cfg.sizeOnly = f.sizeOnly
 	cfg.update = f.update

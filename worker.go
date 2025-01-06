@@ -68,6 +68,11 @@ func mustCalcChecksum(path string, size int64, sizeOnly bool) string {
 	return checksum
 }
 
+func shouldExcludePath(cfg *config, relPath string) bool {
+	return cfg.excludeRe.MatchString(relPath) &&
+		!cfg.includeRe.MatchString(relPath)
+}
+
 func fileCheckWorker(cfg *config, wg *sync.WaitGroup,
 	cIn <-chan fileCheckMsg, cOut chan<- dbUpdateMsg) {
 	// This worker doesn't create any tx on its own.
@@ -75,6 +80,11 @@ func fileCheckWorker(cfg *config, wg *sync.WaitGroup,
 
 	for msg := range cIn {
 		path := filepath.Join(cfg.rootDir, msg.relPath)
+		if shouldExcludePath(cfg, path) {
+			logInfo("skipped: %s", path)
+			continue
+		}
+
 		infoInDb, _ := mustQueryFile(cfg.db, msg.relPath)
 		info := fileInfo{
 			relPath:  msg.relPath,

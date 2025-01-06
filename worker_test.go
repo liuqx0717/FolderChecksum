@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -52,53 +53,61 @@ func fileCheckWorkerRunTests(t *testing.T, cfg *config,
 
 func TestFileCheckWorker(t *testing.T) {
 	// - rootDir
-	// | file1
-	// | - dir1
-	// | | file1
+	// | file1exc
+	// | file.exc
+	// | - dir1.exc
+	// | | incfile1.exc
 	rootDir := filepath.Join(t.TempDir(), "rootDir")
 	err := os.Mkdir(rootDir, 0755)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = os.WriteFile(filepath.Join(rootDir, "file1"), []byte("file1"), 0644)
+	err = os.WriteFile(filepath.Join(rootDir, "file1exc"), []byte("file1"), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir1 := filepath.Join(rootDir, "dir1")
+	err = os.WriteFile(filepath.Join(rootDir, "file.exc"), []byte("file1"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir1 := filepath.Join(rootDir, "dir1.exc")
 	err = os.Mkdir(dir1, 0755)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = os.WriteFile(filepath.Join(dir1, "file1"), []byte("dir1/file1"), 0644)
+	err = os.WriteFile(filepath.Join(dir1, "incfile1.exc"), []byte("dir1/file1"), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
 	mIn := []fileCheckMsg{
-		{"file1", 5},
-		{"dir1/file1", 10},
+		{"file1exc", 5},
+		{"file.exc", 5},
+		{"dir1.exc/incfile1.exc", 10},
 	}
 
 	db := prepareTestDb(t)
 	defer db.Close()
 
 	defaultCfg := config{
-		db:       db,
-		sizeOnly: false,
-		update:   false,
-		rootDir:  rootDir,
+		db:        db,
+		excludeRe: regexp.MustCompile(`^.*\.exc$`),
+		includeRe: regexp.MustCompile(`^(.*/)?inc[^/]*$`),
+		sizeOnly:  false,
+		update:    false,
+		rootDir:   rootDir,
 	}
 
 	// Unchanged files.
 	cfg := defaultCfg
 	rows := []fileRow{
 		{
-			path:     "file1",
+			path:     "file1exc",
 			size:     5,
 			checksum: "826e8142e6baabe8af779f5f490cf5f5",
 			visited:  false,
 		},
 		{
-			path: "dir1/file1",
+			path: "dir1.exc/incfile1.exc",
 			size: 10,
 			// Missing checksum.
 			checksum: "",
@@ -107,16 +116,16 @@ func TestFileCheckWorker(t *testing.T) {
 	}
 	clearAndInsertRowsToFiles(t, db, rows)
 	expectMOut := []dbUpdateMsg{
-		{"M", fileInfo{"file1", 5, "826e8142e6baabe8af779f5f490cf5f5"}},
-		{"M", fileInfo{"dir1/file1", 10, "a09ebcef8ab11daef0e33e4394ea775f"}},
+		{"M", fileInfo{"file1exc", 5, "826e8142e6baabe8af779f5f490cf5f5"}},
+		{"M", fileInfo{"dir1.exc/incfile1.exc", 10, "a09ebcef8ab11daef0e33e4394ea775f"}},
 	}
-	expectStdout := "unchanged: file1\n" +
-		"changed: dir1/file1\n"
+	expectStdout := "unchanged: file1exc\n" +
+		"changed: dir1.exc/incfile1.exc\n"
 	fileCheckWorkerRunTests(t, &cfg, mIn, expectMOut, expectStdout)
 	cfg.update = true
 	expectMOut = []dbUpdateMsg{
-		{"M", fileInfo{"file1", 5, "826e8142e6baabe8af779f5f490cf5f5"}},
-		{"U", fileInfo{"dir1/file1", 10, "a09ebcef8ab11daef0e33e4394ea775f"}},
+		{"M", fileInfo{"file1exc", 5, "826e8142e6baabe8af779f5f490cf5f5"}},
+		{"U", fileInfo{"dir1.exc/incfile1.exc", 10, "a09ebcef8ab11daef0e33e4394ea775f"}},
 	}
 	fileCheckWorkerRunTests(t, &cfg, mIn, expectMOut, expectStdout)
 
@@ -124,7 +133,7 @@ func TestFileCheckWorker(t *testing.T) {
 	cfg = defaultCfg
 	rows = []fileRow{
 		{
-			path:     "dir1",
+			path:     "dir1.exc",
 			size:     10,
 			checksum: "a09ebcef8ab11daef0e33e4394ea775f",
 			visited:  false,
@@ -132,11 +141,11 @@ func TestFileCheckWorker(t *testing.T) {
 	}
 	clearAndInsertRowsToFiles(t, db, rows)
 	expectMOut = []dbUpdateMsg{
-		{"I", fileInfo{"file1", 5, "826e8142e6baabe8af779f5f490cf5f5"}},
-		{"I", fileInfo{"dir1/file1", 10, "a09ebcef8ab11daef0e33e4394ea775f"}},
+		{"I", fileInfo{"file1exc", 5, "826e8142e6baabe8af779f5f490cf5f5"}},
+		{"I", fileInfo{"dir1.exc/incfile1.exc", 10, "a09ebcef8ab11daef0e33e4394ea775f"}},
 	}
-	expectStdout = "new: file1\n" +
-		"new: dir1/file1\n"
+	expectStdout = "new: file1exc\n" +
+		"new: dir1.exc/incfile1.exc\n"
 	// When cfg.update is false, expect empty dbUpdateMsg.
 	fileCheckWorkerRunTests(t, &cfg, mIn, []dbUpdateMsg{}, expectStdout)
 	cfg.update = true
@@ -146,13 +155,13 @@ func TestFileCheckWorker(t *testing.T) {
 	cfg = defaultCfg
 	rows = []fileRow{
 		{
-			path:     "file1",
+			path:     "file1exc",
 			size:     123,
 			checksum: "826e8142e6baabe8af779f5f490cf5f5",
 			visited:  false,
 		},
 		{
-			path: "dir1/file1",
+			path: "dir1.exc/incfile1.exc",
 			size: 10,
 			// Missing checksum.
 			checksum: "",
@@ -161,19 +170,18 @@ func TestFileCheckWorker(t *testing.T) {
 	}
 	clearAndInsertRowsToFiles(t, db, rows)
 	expectMOut = []dbUpdateMsg{
-		{"M", fileInfo{"file1", 5, ""}},
-		{"M", fileInfo{"dir1/file1", 10, "a09ebcef8ab11daef0e33e4394ea775f"}},
+		{"M", fileInfo{"file1exc", 5, ""}},
+		{"M", fileInfo{"dir1.exc/incfile1.exc", 10, "a09ebcef8ab11daef0e33e4394ea775f"}},
 	}
-	expectStdout = "changed: file1\n" +
-		"changed: dir1/file1\n"
+	expectStdout = "changed: file1exc\n" +
+		"changed: dir1.exc/incfile1.exc\n"
 	fileCheckWorkerRunTests(t, &cfg, mIn, expectMOut, expectStdout)
 	cfg.update = true
 	expectMOut = []dbUpdateMsg{
-		{"U", fileInfo{"file1", 5, "826e8142e6baabe8af779f5f490cf5f5"}},
-		{"U", fileInfo{"dir1/file1", 10, "a09ebcef8ab11daef0e33e4394ea775f"}},
+		{"U", fileInfo{"file1exc", 5, "826e8142e6baabe8af779f5f490cf5f5"}},
+		{"U", fileInfo{"dir1.exc/incfile1.exc", 10, "a09ebcef8ab11daef0e33e4394ea775f"}},
 	}
 	fileCheckWorkerRunTests(t, &cfg, mIn, expectMOut, expectStdout)
-
 }
 
 func TestFileCheckWorkerSizeOnly(t *testing.T) {
@@ -208,10 +216,12 @@ func TestFileCheckWorkerSizeOnly(t *testing.T) {
 	defer db.Close()
 
 	defaultCfg := config{
-		db:       db,
-		sizeOnly: true,
-		update:   false,
-		rootDir:  rootDir,
+		db:        db,
+		excludeRe: regexp.MustCompile(`^$`),
+		includeRe: regexp.MustCompile(`^$`),
+		sizeOnly:  true,
+		update:    false,
+		rootDir:   rootDir,
 	}
 
 	// Unchanged files.
