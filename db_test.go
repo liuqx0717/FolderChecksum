@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	"math"
+	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -183,6 +186,148 @@ func prepareTestDb(t *testing.T) *sql.DB {
 func TestCreateFilesTable(t *testing.T) {
 	db := prepareTestDb(t)
 	defer db.Close()
+}
+
+func TestOpenDbLiteralPath(t *testing.T) {
+	cases := []struct {
+		name string
+		dir  string
+		file string
+	}{
+		{"plain", "folder", "state.db"},
+		{"fragment_file", "folder", "state#backup.db"},
+		{"query_file", "folder", "state?tag=backup.db"},
+		{"percent_file", "folder", "state%20backup.db"},
+		{"fragment_directory", "folder#backup", "state.db"},
+		{"query_directory", "folder?tag=backup", "state.db"},
+		{"percent_directory", "folder%20backup", "state.db"},
+		{"space_unicode", "folder 中文", "state + backup.db"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if runtime.GOOS == "windows" && strings.Contains(tc.dir+tc.file, "?") {
+				t.Skip("Windows filenames cannot contain question marks")
+			}
+			for _, relative := range []bool{false, true} {
+				name := "absolute"
+				if relative {
+					name = "relative"
+				}
+				t.Run(name, func(t *testing.T) {
+					file := filepath.Join(t.TempDir(), tc.dir, tc.file)
+					if err := os.MkdirAll(filepath.Dir(file), 0755); err != nil {
+						t.Fatal(err)
+					}
+					argument := file
+					if relative {
+						cwd, err := os.Getwd()
+						if err != nil {
+							t.Fatal(err)
+						}
+						argument, err = filepath.Rel(cwd, file)
+						if err != nil {
+							t.Skipf("Cannot construct relative path: %s", err)
+						}
+					}
+					db := mustOpenDb(argument)
+					defer db.Close()
+					if _, err := db.Exec(`CREATE TABLE sentinel (value TEXT)`); err != nil {
+						t.Fatal(err)
+					}
+					var seq int
+					var schema, actual string
+					if err := db.QueryRow(`PRAGMA database_list`).Scan(&seq, &schema, &actual); err != nil {
+						t.Fatal(err)
+					}
+					expectedInfo, err := os.Stat(file)
+					if err != nil {
+						t.Fatalf("Requested database %q was not created: %s (opened %q)", file, err, actual)
+					}
+					actualInfo, err := os.Stat(actual)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if !os.SameFile(expectedInfo, actualInfo) {
+						t.Fatalf("Requested database %q, opened %q", file, actual)
+					}
+					var mode string
+					if err := db.QueryRow(`PRAGMA journal_mode`).Scan(&mode); err != nil {
+						t.Fatal(err)
+					}
+					if mode != "wal" {
+						t.Fatalf("Expected WAL mode, got %q", mode)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestQueryUnvisitedFilesCaseSensitive(t *testing.T) {
+	db := prepareTestDb(t)
+	defer db.Close()
+	clearAndInsertRowsToFiles(t, db, []fileRow{
+		{path: "foo/file", size: 1},
+		{path: "foo/nested/file", size: 2},
+		{path: "Foo/file", size: 3},
+		{path: "foo0/file", size: 4},
+	})
+	tx := mustCreateTx(db)
+	defer tx.Rollback()
+	var actual []fileInfo
+	mustQueryUnvisitedFiles(tx, "foo/", func(file *fileInfo) {
+		actual = append(actual, *file)
+	})
+	verifyFileInfo(t, actual, []fileInfo{
+		{relPath: "foo/file", size: 1},
+		{relPath: "foo/nested/file", size: 2},
+	})
+}
+
+func TestClearVisitedFlagsCaseSensitive(t *testing.T) {
+	db := prepareTestDb(t)
+	defer db.Close()
+	clearAndInsertRowsToFiles(t, db, []fileRow{
+		{path: "foo/file", size: 1, visited: true},
+		{path: "Foo/file", size: 2, visited: true},
+		{path: "foo0/file", size: 3, visited: true},
+	})
+	tx := mustCreateTx(db)
+	defer tx.Rollback()
+	if n := mustClearVisitedFlags(tx, "foo/"); n != 1 {
+		t.Errorf("Cleared %d visited flags, expected 1", n)
+	}
+	mustCommitTx(tx)
+	verifyFileRows(t, getAllRowsFromFiles(t, db), []fileRow{
+		{path: "Foo/file", size: 2, visited: true},
+		{path: "foo/file", size: 1},
+		{path: "foo0/file", size: 3, visited: true},
+	})
+}
+
+func TestPrefixCleanupCaseSensitive(t *testing.T) {
+	db := prepareTestDb(t)
+	defer db.Close()
+	clearAndInsertRowsToFiles(t, db, []fileRow{
+		{path: "foo/kept", size: 1, visited: true},
+		{path: "foo/deleted", size: 2},
+		{path: "Foo/unscanned", size: 3},
+	})
+	var out bytes.Buffer
+	cfg := config{db: db, update: true, outFile: &out}
+	clearStats()
+	defer clearStats()
+	tx := mustCreateTx(db)
+	defer tx.Rollback()
+	mustHandleDeletedFiles(&cfg, tx, "foo")
+	mustCommitTx(tx)
+	if actual := out.String(); actual != "deleted: foo/deleted\n" {
+		t.Errorf("Unexpected deleted files: %q", actual)
+	}
+	verifyFileRows(t, getAllRowsFromFiles(t, db), []fileRow{
+		{path: "Foo/unscanned", size: 3},
+		{path: "foo/kept", size: 1},
+	})
 }
 
 func TestInsertFile(t *testing.T) {

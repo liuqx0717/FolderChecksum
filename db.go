@@ -2,7 +2,8 @@ package main
 
 import (
 	"database/sql"
-	"strings"
+	"net/url"
+	"path/filepath"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -13,15 +14,22 @@ type fileInfo struct {
 	checksum string
 }
 
-func escapeForLike(literal string) string {
-	ret := strings.ReplaceAll(literal, `\`, `\\`)
-	ret = strings.ReplaceAll(ret, `%`, `\%`)
-	ret = strings.ReplaceAll(ret, `_`, `\_`)
-	return ret
-}
-
 // The user should call Close() on the return value.
 func mustOpenDb(file string) *sql.DB {
+	absFile, err := filepath.Abs(file)
+	if err != nil {
+		logFatal("Failed to resolve '%s': %s", file, err.Error())
+	}
+	uriPath := filepath.ToSlash(absFile)
+	if uriPath[0] != '/' {
+		// Windows drive paths need a leading slash in file URIs.
+		uriPath = "/" + uriPath
+	}
+	uri := url.URL{
+		Scheme:   "file",
+		Path:     uriPath,
+		RawQuery: "_journal_mode=WAL&_txlock=immediate",
+	}
 	// In the default ROLLBACK mode, readers can be active at the
 	// beginning of a write, before any content is flushed to disk
 	// and while all changes are still held in the writer's private
@@ -33,8 +41,7 @@ func mustOpenDb(file string) *sql.DB {
 	// disk even when COMMIT is not called yet, and the readers will
 	// fail with "database is locked" error. Using WAL mode can prevent
 	// this.
-	db, err := sql.Open("sqlite3", "file:"+file+
-		"?_journal_mode=WAL&_txlock=immediate")
+	db, err := sql.Open("sqlite3", uri.String())
 	if err != nil {
 		logFatal("Failed to open '%s': %s", file, err.Error())
 	}
@@ -218,21 +225,32 @@ func mustDeleteUnvisitedFile(tx *sql.Tx, relPath string) {
 	assertRowsAffected(res, 1)
 }
 
-func mustQueryUnvisitedFiles(tx *sql.Tx, prefix string,
-	procOneFile func(file *fileInfo)) {
-	if prefix != "" && prefix[len(prefix)-1] != '/' {
+func filePrefixCondition(prefix string) (string, []any) {
+	if prefix == "" {
+		return "1", nil
+	}
+	if prefix[len(prefix)-1] != '/' {
 		logFatal("prefix must end with '/'")
 	}
+	// The path primary key uses SQLite's binary collation. The byte after
+	// '/' is '0', so this range matches exactly the prefix and uses its index.
+	// Don't use LIKE: SQLite’s LIKE matches case-insensitively.
+	return "path >= ? AND path < ?", []any{prefix, prefix[:len(prefix)-1] + "0"}
+}
+
+func mustQueryUnvisitedFiles(tx *sql.Tx, prefix string,
+	procOneFile func(file *fileInfo)) {
+	condition, args := filePrefixCondition(prefix)
 	stmt, err := tx.Prepare(
 		`SELECT path, size, checksum FROM files
-			WHERE path LIKE ? ESCAPE '\' AND visited=0
+			WHERE ` + condition + ` AND visited=0
 			ORDER BY path ASC`)
 	if err != nil {
 		logFatal("Failed to prepare query %s: %s", prefix, err.Error())
 	}
 	defer stmt.Close()
 
-	rows, err := stmt.Query(escapeForLike(prefix) + "%")
+	rows, err := stmt.Query(args...)
 	if err != nil {
 		logFatal("Failed to query %s: %s", prefix, err.Error())
 	}
@@ -257,17 +275,15 @@ func mustQueryUnvisitedFiles(tx *sql.Tx, prefix string,
 }
 
 func mustDeleteUnvisitedFiles(tx *sql.Tx, prefix string, expectN int64) {
-	if prefix != "" && prefix[len(prefix)-1] != '/' {
-		logFatal("prefix must end with '/'")
-	}
+	condition, args := filePrefixCondition(prefix)
 	stmt, err := tx.Prepare(`
-		DELETE FROM files WHERE path LIKE ? ESCAPE '\' AND visited=0`)
+		DELETE FROM files WHERE ` + condition + ` AND visited=0`)
 	if err != nil {
 		logFatal("Failed to prepare delete %s: %s", prefix, err.Error())
 	}
 	defer stmt.Close()
 
-	res, err := stmt.Exec(escapeForLike(prefix) + "%")
+	res, err := stmt.Exec(args...)
 	if err != nil {
 		logFatal("Failed to delete %s: %s", prefix, err.Error())
 	}
@@ -293,19 +309,17 @@ func mustClearVisitedFlag(tx *sql.Tx, relpath string) {
 
 // Return number of rows affected.
 func mustClearVisitedFlags(tx *sql.Tx, prefix string) int64 {
-	if prefix != "" && prefix[len(prefix)-1] != '/' {
-		logFatal("prefix must end with '/'")
-	}
+	condition, args := filePrefixCondition(prefix)
 	stmt, err := tx.Prepare(
 		`UPDATE files
 			SET visited=0
-			WHERE path LIKE ? ESCAPE '\' AND visited=1`)
+			WHERE ` + condition + ` AND visited=1`)
 	if err != nil {
 		logFatal("Failed to prepare clear %s: %s", prefix, err.Error())
 	}
 	defer stmt.Close()
 
-	res, err := stmt.Exec(escapeForLike(prefix) + "%")
+	res, err := stmt.Exec(args...)
 	if err != nil {
 		logFatal("Failed to clear %s: %s", prefix, err.Error())
 	}
