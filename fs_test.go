@@ -2,7 +2,9 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -198,6 +200,9 @@ func TestWalkDirIgnoreSymLinks(t *testing.T) {
 	verifyWalkRes(t, actual, expect)
 	mustWalkDir(rootDir, "dirX/dirX", false, procOneFile)
 	verifyWalkRes(t, actual, expect)
+	// A regular-file ancestor also means the requested descendant is absent.
+	mustWalkDir(rootDir, "file1/dirX", false, procOneFile)
+	verifyWalkRes(t, actual, expect)
 
 	// Use the symlink file1 as prefix. It's followed.
 	actual = []walkRes{}
@@ -232,4 +237,84 @@ func TestWalkDirIgnoreSymLinks(t *testing.T) {
 	}
 	mustWalkDir(filepath.Join(rootDir, "dir2", "dir1"), "", false, procOneFile)
 	verifyWalkRes(t, actual, expect)
+}
+
+func TestWalkDirRejectsStatErrors(t *testing.T) {
+	// These are death tests: logFatal calls os.Exit, so the failing walk must
+	// run in a separate test process. This test serves two roles:
+	//   - Without FOLDERCHECKSUM_TEST_WALK_ROOT, it is the driver that prepares
+	//     each case, starts a child process, and checks its exit status and log.
+	//   - With FOLDERCHECKSUM_TEST_WALK_ROOT set, it is the child that runs the
+	//     death test using that root and FOLDERCHECKSUM_TEST_WALK_PREFIX.
+	if rootDir := os.Getenv("FOLDERCHECKSUM_TEST_WALK_ROOT"); rootDir != "" {
+		// Child process: the walk should terminate this process via logFatal.
+		mustWalkDir(rootDir, os.Getenv("FOLDERCHECKSUM_TEST_WALK_PREFIX"), false,
+			func(relPath string, size int64) {
+				t.Fatalf("unexpected file: %s", relPath)
+			})
+		// If it returns normally, the child succeeds and the driver rejects it.
+		return
+	}
+
+	// Driver process: create the fixtures and run each death test in a child.
+	tests := []struct {
+		name    string
+		prepare func(*testing.T, string) string
+	}{
+		{
+			name: "permission denied",
+			prepare: func(t *testing.T, rootDir string) string {
+				parent := filepath.Join(rootDir, "parent")
+				child := filepath.Join(parent, "child")
+				if err := os.MkdirAll(child, 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(parent, 0); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() {
+					if err := os.Chmod(parent, 0755); err != nil {
+						t.Error(err)
+					}
+				})
+				if _, err := os.Stat(child); !os.IsPermission(err) {
+					t.Skipf("cannot reproduce permission denial: %v", err)
+				}
+				return "parent/child"
+			},
+		},
+		{
+			name: "symlink loop",
+			prepare: func(t *testing.T, rootDir string) string {
+				if err := os.Symlink("loop", filepath.Join(rootDir, "loop")); err != nil {
+					t.Fatal(err)
+				}
+				return "loop"
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rootDir := t.TempDir()
+			prefix := tt.prepare(t, rootDir)
+			if _, err := os.Stat(filepath.Join(rootDir, prefix)); err == nil || os.IsNotExist(err) {
+				t.Fatalf("expected a non-missing stat error, got %v", err)
+			}
+			// Re-run only this test in a new instance of the current test binary.
+			// The environment variables select the child branch above and pass
+			// the fixture paths, preventing the child from spawning more tests.
+			cmd := exec.Command(os.Args[0], "-test.run=^TestWalkDirRejectsStatErrors$")
+			cmd.Env = append(os.Environ(),
+				"FOLDERCHECKSUM_TEST_WALK_ROOT="+rootDir,
+				"FOLDERCHECKSUM_TEST_WALK_PREFIX="+prefix)
+			output, err := cmd.CombinedOutput()
+			if err == nil {
+				t.Fatalf("walk succeeded despite stat failure:\n%s", output)
+			}
+			exitErr, ok := err.(*exec.ExitError)
+			if !ok || exitErr.ExitCode() != 1 || !strings.Contains(string(output), "[ERROR] Failed to walk") {
+				t.Fatalf("expected fatal walk error, got %v:\n%s", err, output)
+			}
+		})
+	}
 }

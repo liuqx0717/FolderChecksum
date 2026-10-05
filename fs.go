@@ -2,12 +2,14 @@ package main
 
 import (
 	"crypto/md5"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
+	"syscall"
 )
 
 // Return false for directories and regular files. Return true otherwise.
@@ -71,12 +73,13 @@ func mustWalkDir(rootDir string, prefix string, followLinks bool,
 	fs.WalkDir(fsys, prefixArg,
 		func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
-				if d == nil {
-					// The initial fs.Stat failed.
+				if d == nil && (os.IsNotExist(err) || errors.Is(err, syscall.ENOTDIR)) {
+					// A missing prefix (including a regular-file ancestor) is allowed
+					// so its old records can be deleted.
 					logWarning("Failed to stat prefix '%s', skipped", path)
 					return nil
 				}
-				// A directory's ReadDir method failed.
+				// Other stat or ReadDir errors must not look like deleted files.
 				logFatal("Failed to walk '%s': %s", path, err.Error())
 			}
 			isDir := d.IsDir()
