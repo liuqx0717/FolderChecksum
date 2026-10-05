@@ -218,3 +218,76 @@ Pattern Matching:
   This tool will automatically add a leading '^' and trailing '$' for each
   specified pattern.
 ```
+
+# Build
+
+## Build native binary
+
+SQLite requires CGO, you need to have a default C compiler on your system.
+
+```sh
+cd /path/to/FolderChecksum
+go build
+# FolderChecksum should appear.
+```
+
+## Cross-compile for amd64/arm64 darwin/linux/windows
+
+SQLite requires CGO, so install the required C compilers first. The `CC_*`
+environment variables below are optional overrides: leave them unset to use
+the default compiler names from `PATH`, or set them to executable names or
+paths to select different compilers. On non-macOS hosts, `CC_DARWIN_AMD64`
+and `CC_DARWIN_ARM64` must be set to compilers with an Apple SDK.
+
+```
+  Target          Override variable       Default compiler
+  darwin/amd64    CC_DARWIN_AMD64          clang (macOS host only)
+  darwin/arm64    CC_DARWIN_ARM64          clang (macOS host only)
+  linux/amd64     CC_LINUX_AMD64           x86_64-linux-musl-gcc
+  linux/arm64     CC_LINUX_ARM64           aarch64-linux-musl-gcc
+  windows/amd64   CC_WINDOWS_AMD64         x86_64-w64-mingw32-gcc
+  windows/arm64   CC_WINDOWS_ARM64         aarch64-w64-mingw32-clang
+```
+
+Example to run `build-release-all.sh` on macOS (Apple Silicon), using Go 1.20
+and extracted cross-compilers in `~/bin/toolchains/`:
+
+```sh
+cd /path/to/FolderChecksum
+
+toolchains_dir="$HOME/bin/toolchains"
+
+GO_BIN="/path/to/go1.20/bin/go" \
+CC_LINUX_AMD64="$toolchains_dir/x86_64-unknown-linux-musl/bin/x86_64-linux-musl-gcc" \
+CC_LINUX_ARM64="$toolchains_dir/aarch64-unknown-linux-musl/bin/aarch64-linux-musl-gcc" \
+CC_WINDOWS_AMD64="$toolchains_dir/llvm-mingw-msvcrt/bin/x86_64-w64-mingw32-clang" \
+CC_WINDOWS_ARM64="$toolchains_dir/llvm-mingw-20260922-ucrt-macos-universal/bin/aarch64-w64-mingw32-clang" \
+./build-release-all.sh
+```
+
+The script creates six ZIP files in `dist/`, named
+`FolderChecksum-{mac,linux,windows}-{amd64,arm64}.zip`.
+
+### Details about the cross-compilers on macOS (Apple Silicon)
+
+The macOS targets above use the native Apple Clang from Xcode Command Line
+Tools, so `CC_DARWIN_AMD64` and `CC_DARWIN_ARM64` are not set.
+
+The Linux targets above use the Apple Silicon musl toolchains from
+[macOS cross-toolchains v15.2.0](https://github.com/messense/homebrew-macos-cross-toolchains/releases/tag/v15.2.0).
+
+The Windows arm64 target above uses the macOS universal package from
+[LLVM-MinGW 20260922](https://github.com/mstorsjo/llvm-mingw/releases/tag/20260922).
+
+The Windows amd64 target uses `llvm-mingw-msvcrt` -- a separate copy
+of LLVM-MinGW with its Windows amd64 C runtime rebuilt for MSVCRT and
+Windows 7; it is not included in the UCRT download. The amd64 executable
+uses Windows' built-in `msvcrt.dll`, so it does not require a UCRT
+installation. Keep Go 1.20 for Windows 7 support.
+
+## Run all unit tests
+
+```sh
+cd /path/to/FolderChecksum
+go test .
+```
