@@ -4,6 +4,14 @@ This tool saves the current information of a folder to a database file.
 Later the database file can be used to track the changes in that folder.
 Metadata changes (modify/access time, permissions, etc) are ignored.
 
+Path comparisons are always case-sensitive, even on case-insensitive filesystems.
+Use the exact on-disk casing for `<prefix>` and `<dbfile>`.
+
+Regex patterns are case-sensitive by default; an explicit `(?i)` enables
+case-insensitive pattern matching.
+
+Always use slash (`/`) as the path separator in `<prefix>`, even on Windows.
+
 Usage:
 
 ```
@@ -119,6 +127,14 @@ Usage:
   Calculate the checksums of <rootdir>'s subfiles, compare them against
   the checksums stored in <dbfile>, and update <dbfile> when -update is
   used.
+
+  Path comparisons are always case-sensitive, even on case-insensitive
+  filesystems. Use the exact on-disk casing for <prefix> and <dbfile>.
+
+  Regex patterns are case-sensitive by default; an explicit (?i) enables
+  case-insensitive pattern matching.
+
+  Always use slash (/) as the path separator in <prefix>, even on Windows.
 
 Positional Arguments:
 
