@@ -2,8 +2,10 @@ package main
 
 import (
 	"crypto/md5"
+	"crypto/sha1"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"io/fs"
 	"os"
@@ -98,18 +100,27 @@ func mustWalkDir(rootDir string, prefix string, followLinks bool,
 		})
 }
 
-// Return md5 string and number of bytes read.
-func mustCalcFileMd5(filePath string) (string, int64) {
+// Return the hexadecimal checksum and number of bytes read.
+func mustCalcFileChecksum(filePath string, algorithm checksumAlgorithm) (string, int64) {
+	var digest hash.Hash
+	switch algorithm {
+	case checksumMD5:
+		digest = md5.New()
+	case checksumSHA1:
+		digest = sha1.New()
+	default:
+		logFatal("Unknown checksum algorithm: %s", algorithm)
+	}
+
 	file, err := os.Open(filePath)
 	if err != nil {
 		logFatal("Failed to open '%s': %s", filePath, err.Error())
 	}
 	defer file.Close()
 
-	hash := md5.New()
-	n, err := io.Copy(hash, file)
+	n, err := io.Copy(digest, file)
 	if err != nil {
-		logFatal("Failed to compute md5 for '%s': %s", filePath, err.Error())
+		logFatal("Failed to compute %s for '%s': %s", algorithm, filePath, err.Error())
 	}
-	return fmt.Sprintf("%x", hash.Sum(nil)), n
+	return fmt.Sprintf("%x", digest.Sum(nil)), n
 }

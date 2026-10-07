@@ -25,7 +25,7 @@ func TestDatabaseExclusionCaseSensitive(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	cfg := testConfig(t, &flags{dbFile: "checksum.db", rootDir: rootDir, j: 1})
+	cfg := testConfig(t, &flags{dbFile: "checksum.db", checksum: "auto", rootDir: rootDir, j: 1})
 	for _, name := range []string{"checksum.db", "checksum.db-wal", "checksum.db-shm"} {
 		if !shouldExcludePath(cfg, name) {
 			t.Errorf("specified database file %q is not excluded", name)
@@ -51,7 +51,7 @@ func TestDatabaseExclusionExplicitPath(t *testing.T) {
 	rootDir := t.TempDir()
 	// A database path containing a separator is not automatically excluded,
 	// even when it points to a file inside the scanned root directory.
-	cfg := testConfig(t, &flags{dbFile: filepath.Join(rootDir, "checksum.db"), rootDir: rootDir, j: 1})
+	cfg := testConfig(t, &flags{dbFile: filepath.Join(rootDir, "checksum.db"), checksum: "auto", rootDir: rootDir, j: 1})
 	if shouldExcludePath(cfg, "checksum.db") {
 		t.Error("explicit database path was automatically excluded")
 	}

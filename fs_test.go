@@ -92,7 +92,7 @@ func prepareTestDir(t *testing.T) string {
 	return testDir
 }
 
-func TestCalcFileMd5(t *testing.T) {
+func TestCalcFileChecksumMD5(t *testing.T) {
 	// % echo -n '' | md5sum
 	// d41d8cd98f00b204e9800998ecf8427e  -
 	// % echo -n 'file1' | md5sum
@@ -103,7 +103,7 @@ func TestCalcFileMd5(t *testing.T) {
 	rootDir := prepareTestDir(t)
 
 	// Empty file.
-	md5, n := mustCalcFileMd5(filepath.Join(rootDir, "emptyFile"))
+	md5, n := mustCalcFileChecksum(filepath.Join(rootDir, "emptyFile"), checksumMD5)
 	if md5 != "d41d8cd98f00b204e9800998ecf8427e" {
 		t.Fatalf("Incorrect md5: %s", md5)
 	}
@@ -112,7 +112,7 @@ func TestCalcFileMd5(t *testing.T) {
 	}
 
 	// Non-empty file.
-	md5, n = mustCalcFileMd5(filepath.Join(rootDir, "file1"))
+	md5, n = mustCalcFileChecksum(filepath.Join(rootDir, "file1"), checksumMD5)
 	if md5 != "826e8142e6baabe8af779f5f490cf5f5" {
 		t.Fatalf("Incorrect md5: %s", md5)
 	}
@@ -121,7 +121,7 @@ func TestCalcFileMd5(t *testing.T) {
 	}
 
 	// Symlink to a file.
-	md5, n = mustCalcFileMd5(filepath.Join(rootDir, "dir2", "file1"))
+	md5, n = mustCalcFileChecksum(filepath.Join(rootDir, "dir2", "file1"), checksumMD5)
 	if md5 != "826e8142e6baabe8af779f5f490cf5f5" {
 		t.Fatalf("Incorrect md5: %s", md5)
 	}
@@ -130,12 +130,58 @@ func TestCalcFileMd5(t *testing.T) {
 	}
 
 	// Symlink in path.
-	md5, n = mustCalcFileMd5(filepath.Join(rootDir, "dir2", "dir1", "file1"))
+	md5, n = mustCalcFileChecksum(filepath.Join(rootDir, "dir2", "dir1", "file1"), checksumMD5)
 	if md5 != "a09ebcef8ab11daef0e33e4394ea775f" {
 		t.Fatalf("Incorrect md5: %s", md5)
 	}
 	if n != 10 {
 		t.Fatalf("Incorrect n: %d", n)
+	}
+}
+
+func TestCalcFileChecksumVectors(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+		md5  string
+		sha1 string
+	}{
+		{
+			name: "empty",
+			data: "",
+			md5:  "d41d8cd98f00b204e9800998ecf8427e",
+			sha1: "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+		},
+		{
+			name: "short",
+			data: "abc",
+			md5:  "900150983cd24fb0d6963f7d28e17f72",
+			sha1: "a9993e364706816aba3e25717850c26c9cd0d89d",
+		},
+		{
+			name: "multiple blocks",
+			data: strings.Repeat("1234567890", 8),
+			md5:  "57edf4a22be3c955ac49da2e2107b67a",
+			sha1: "50abf5706a150990a08b2c5ea40fa0e585554732",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filePath := filepath.Join(t.TempDir(), "file")
+			if err := os.WriteFile(filePath, []byte(tt.data), 0644); err != nil {
+				t.Fatal(err)
+			}
+			for algorithm, expected := range map[checksumAlgorithm]string{
+				checksumMD5: tt.md5, checksumSHA1: tt.sha1,
+			} {
+				t.Run(string(algorithm), func(t *testing.T) {
+					checksum, n := mustCalcFileChecksum(filePath, algorithm)
+					if checksum != expected || n != int64(len(tt.data)) {
+						t.Fatalf("got (%s, %d), want (%s, %d)", checksum, n, expected, len(tt.data))
+					}
+				})
+			}
+		})
 	}
 }
 

@@ -54,11 +54,11 @@ func outputUnchangedFile(cfg *config, relPath string) {
 	stats.numFilesUnchanged.Add(1)
 }
 
-func mustCalcChecksum(path string, size int64, sizeOnly bool) string {
+func mustCalcChecksum(path string, size int64, sizeOnly bool, algorithm checksumAlgorithm) string {
 	if sizeOnly {
 		return ""
 	}
-	checksum, n := mustCalcFileMd5(path)
+	checksum, n := mustCalcFileChecksum(path, algorithm)
 	if n != size {
 		logFatal("Failed to checksum '%s': size=%d, n=%d", path, size, n)
 	}
@@ -95,7 +95,7 @@ func fileCheckWorker(id int, cfg *config, wg *sync.WaitGroup,
 			// Db doesn't have this file.
 			outputNewFile(cfg, msg.relPath)
 			if cfg.update {
-				info.checksum = mustCalcChecksum(path, msg.size, cfg.sizeOnly)
+				info.checksum = mustCalcChecksum(path, msg.size, cfg.sizeOnly, cfg.checksum)
 				// Insert the file into db.
 				cOut <- dbUpdateMsg{"I", info}
 			}
@@ -106,7 +106,7 @@ func fileCheckWorker(id int, cfg *config, wg *sync.WaitGroup,
 			// Db has this file, but size is different.
 			outputChangedFile(cfg, msg.relPath)
 			if cfg.update {
-				info.checksum = mustCalcChecksum(path, msg.size, cfg.sizeOnly)
+				info.checksum = mustCalcChecksum(path, msg.size, cfg.sizeOnly, cfg.checksum)
 				// Update the file in db.
 				cOut <- dbUpdateMsg{"U", info}
 			} else {
@@ -133,7 +133,7 @@ func fileCheckWorker(id int, cfg *config, wg *sync.WaitGroup,
 		}
 
 		// Compare the checksum.
-		info.checksum = mustCalcChecksum(path, msg.size, cfg.sizeOnly)
+		info.checksum = mustCalcChecksum(path, msg.size, cfg.sizeOnly, cfg.checksum)
 		if !dbHasChecksum {
 			logWarning("Db only has size info for '%s' but -sizeonly is "+
 				"not used.", msg.relPath)

@@ -29,6 +29,7 @@ type flags struct {
 	logLevel    int
 	j           int
 	dbFile      string
+	checksum    string
 	excludeList flagValues
 	includeList flagValues
 	followLinks bool
@@ -43,6 +44,7 @@ var flg flags
 type config struct {
 	j           int
 	dbFile      string
+	checksum    checksumAlgorithm
 	db          *sql.DB        // thread safe
 	excludeRe   *regexp.Regexp // thread safe
 	includeRe   *regexp.Regexp // thread safe
@@ -79,7 +81,7 @@ func init() {
 		fmt.Fprintln(w, "")
 		fmt.Fprintln(w, "  <rootdir>")
 		fmt.Fprintln(w, "    \tThe root folder to calculate the checksums. For each subfile, the")
-		fmt.Fprintln(w, "    \tpath relative to <rootdir>, the size, and the md5 checksum will be")
+		fmt.Fprintln(w, "    \tpath relative to <rootdir>, the size, and the checksum will be")
 		fmt.Fprintln(w, "    \tstored into <dbfile>. <rootdir> must be a folder.")
 		fmt.Fprintln(w, "")
 		fmt.Fprintln(w, "  <prefix>")
@@ -134,6 +136,16 @@ func init() {
 	flag.IntVar(&flg.j, "j", runtime.NumCPU(),
 		"Set the number of workers to parallelly read the files. For SSD\n"+
 			"only. Use 1 if <rootdir> is on a HDD.\n")
+	flag.StringVar(&flg.checksum, "checksum", "auto",
+		"Choose auto, sha1, or md5. Auto uses the first nonempty saved\n"+
+			"checksum's length (32 for md5, 40 for sha1). If absent or unknown,\n"+
+			"choose sha1 on amd64 with AVX2 + BMI1 + BMI2, or supported arm64\n"+
+			"OSes with SHA-1 instructions. Otherwise use md5, including on\n"+
+			"Windows arm64 where Go 1.20 uses generic SHA-1.\n"+
+			"Auto logs the chosen algorithm and reason. If a manually\n"+
+			"specified algorithm differs from the saved checksums, they are\n"+
+			"treated as checksum mismatches and produce 'changed' entries.\n"+
+			"Ignored with -sizeonly.\n")
 	flag.StringVar(&flg.dbFile, "dbfile", ".checksum.db",
 		"Set database file name. If it doesn't contain any "+s+", the file\n"+
 			"will be put into <rootdir> and will be automatically added to the\n"+
@@ -187,6 +199,11 @@ func getRegexFromList(patterns []string) *regexp.Regexp {
 
 func flagsToConfig(f *flags) *config {
 	var cfg config
+	algorithm, err := parseChecksumAlgorithm(f.checksum)
+	if err != nil {
+		logFatal("%s", err)
+	}
+	cfg.checksum = algorithm
 
 	containPathSep := strings.Contains(f.dbFile, string(os.PathSeparator))
 	if !containPathSep && f.dbFile != path.Clean(f.dbFile) {

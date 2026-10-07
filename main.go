@@ -21,6 +21,7 @@ func main() {
 	}
 	logInfo("Using database file: %s", cfg.dbFile)
 	mustCreateFilesTableIfNeeded(cfg.db)
+	mustSelectChecksum(cfg)
 
 	// Start workers (1 dbUpdateWorker and j fileCheckWorker).
 	chFileCheck := make(chan fileCheckMsg)

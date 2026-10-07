@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -99,6 +100,7 @@ func TestFileCheckWorker(t *testing.T) {
 		excludeRe: regexp.MustCompile(`^((.*\.exc)|(exclude))$`),
 		includeRe: regexp.MustCompile(`^(.*/)?inc[^/]*$`),
 		sizeOnly:  false,
+		checksum:  checksumMD5,
 		update:    false,
 		rootDir:   rootDir,
 	}
@@ -225,6 +227,7 @@ func TestFileCheckWorkerSizeOnly(t *testing.T) {
 		excludeRe: regexp.MustCompile(`^$`),
 		includeRe: regexp.MustCompile(`^$`),
 		sizeOnly:  true,
+		checksum:  checksumSHA1,
 		update:    false,
 		rootDir:   rootDir,
 	}
@@ -313,6 +316,118 @@ func TestFileCheckWorkerSizeOnly(t *testing.T) {
 		{"U", fileInfo{"dir1/file1", 10, ""}},
 	}
 	fileCheckWorkerRunTests(t, &cfg, mIn, expectMOut, expectStdout)
+}
+
+func TestFileCheckWorkerSHA1(t *testing.T) {
+	const checksum = "a9993e364706816aba3e25717850c26c9cd0d89d"
+	tests := []struct {
+		name   string
+		stored []fileRow
+		output string
+		opType string
+	}{
+		{
+			name:   "new",
+			output: "new: file\n",
+			opType: "I",
+		},
+		{
+			name:   "unchanged",
+			stored: []fileRow{{path: "file", size: 3, checksum: checksum}},
+			opType: "M",
+		},
+		{
+			name:   "changed content",
+			stored: []fileRow{{path: "file", size: 3, checksum: "cb4cc28df0fdbe0ecf9d9662e294b118092a5735"}},
+			output: "changed: file\n",
+			opType: "U",
+		},
+		{
+			name:   "changed size",
+			stored: []fileRow{{path: "file", size: 4, checksum: checksum}},
+			output: "changed: file\n",
+			opType: "U",
+		},
+		{
+			name:   "missing checksum",
+			stored: []fileRow{{path: "file", size: 3}},
+			output: "changed: file\n",
+			opType: "U",
+		},
+	}
+	for _, tt := range tests {
+		for _, update := range []bool{false, true} {
+			t.Run(tt.name+"/update="+strconv.FormatBool(update), func(t *testing.T) {
+				rootDir := t.TempDir()
+				if err := os.WriteFile(filepath.Join(rootDir, "file"), []byte("abc"), 0644); err != nil {
+					t.Fatal(err)
+				}
+				db := prepareTestDb(t)
+				defer db.Close()
+				clearAndInsertRowsToFiles(t, db, tt.stored)
+				cfg := config{
+					db:        db,
+					excludeRe: regexp.MustCompile(`^$`),
+					includeRe: regexp.MustCompile(`^$`),
+					rootDir:   rootDir,
+					checksum:  checksumSHA1,
+					update:    update,
+				}
+				var expected []dbUpdateMsg
+				if update || len(tt.stored) != 0 {
+					opType, expectedChecksum := tt.opType, checksum
+					if !update {
+						opType = "M"
+						if tt.stored[0].size != 3 {
+							expectedChecksum = ""
+						}
+					}
+					expected = []dbUpdateMsg{{opType, fileInfo{"file", 3, expectedChecksum}}}
+				}
+				fileCheckWorkerRunTests(t, &cfg, []fileCheckMsg{{"file", 3}}, expected, tt.output)
+			})
+		}
+	}
+}
+
+func TestFileCheckWorkerAlgorithmMismatch(t *testing.T) {
+	const md5Checksum = "900150983cd24fb0d6963f7d28e17f72"
+	const sha1Checksum = "a9993e364706816aba3e25717850c26c9cd0d89d"
+	tests := []struct {
+		algorithm checksumAlgorithm
+		stored    string
+		expected  string
+	}{
+		{checksumSHA1, md5Checksum, sha1Checksum},
+		{checksumMD5, sha1Checksum, md5Checksum},
+	}
+	for _, tt := range tests {
+		for _, update := range []bool{false, true} {
+			t.Run(string(tt.algorithm)+"/update="+strconv.FormatBool(update), func(t *testing.T) {
+				rootDir := t.TempDir()
+				if err := os.WriteFile(filepath.Join(rootDir, "file"), []byte("abc"), 0644); err != nil {
+					t.Fatal(err)
+				}
+				db := prepareTestDb(t)
+				defer db.Close()
+				clearAndInsertRowsToFiles(t, db, []fileRow{{path: "file", size: 3, checksum: tt.stored}})
+				cfg := config{
+					db:        db,
+					excludeRe: regexp.MustCompile(`^$`),
+					includeRe: regexp.MustCompile(`^$`),
+					rootDir:   rootDir,
+					checksum:  tt.algorithm,
+					update:    update,
+				}
+				opType := "M"
+				if update {
+					opType = "U"
+				}
+				expected := []dbUpdateMsg{{opType, fileInfo{"file", 3, tt.expected}}}
+				fileCheckWorkerRunTests(t, &cfg, []fileCheckMsg{{"file", 3}}, expected, "changed: file\n")
+			})
+		}
+	}
 }
 
 func dbUpdateWorkerRunTest(t *testing.T, cfg *config,

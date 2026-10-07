@@ -89,6 +89,72 @@ files and updates the database file with the current content of the folder.
 By default this tool uses multiple threads to read the files. Please use
 `-j 1` when scanning a folder on HDD.
 
+# Checksum algorithm
+
+Use `-checksum auto|sha1|md5` to select the checksum algorithm. The default
+is `auto`:
+
+- If `<dbfile>` contains saved checksums, use the length of the first
+  nonempty checksum returned by the database: 32 hexadecimal characters
+  means MD5, and 40 means SHA-1. Entries with NULL or empty checksums are
+  skipped, and selection stops as soon as a nonempty checksum is found.
+- If there are no saved checksums (including a database created with
+  `-sizeonly`), or the first nonempty checksum has an unrecognized length,
+  choose based on the OS, architecture, and CPU features that Go 1.20's
+  implementation can use, as described below.
+- Auto mode logs the selected algorithm and the reason at INFO level on
+  `stderr`.
+
+Manually specifying `-checksum sha1` or `-checksum md5` always uses that
+algorithm. If saved checksums use a different algorithm, they are treated
+as checksum mismatches and produce `changed` entries, even when the file
+contents have not changed. With `-update`, the processed entries are saved
+using the selected algorithm. Without `-update`, the saved checksums are
+left unchanged.
+
+Auto mode does not inspect the remaining checksums when selecting an
+algorithm. In a database containing both MD5 and SHA-1 checksums, the
+first nonempty checksum determines the algorithm; files saved with the
+other algorithm produce `changed` entries when compared. If that first
+checksum has an unrecognized length, use the same platform selection as
+for a database with no saved checksums. The log includes the unrecognized
+length and the reason for the chosen algorithm. Such saved checksums are
+treated as mismatches and produce `changed` entries when compared.
+
+`-sizeonly` ignores checksum and only compares file sizes.
+
+Hashing uses Go's standard library. The table below describes normal
+Go 1.20 builds for the six supported release targets:
+
+| os | arch | md5 | sha1 |
+| --- | --- | --- | --- |
+| macOS (`darwin`) | `amd64` | Optimized scalar assembly | AVX2 when available; otherwise scalar assembly |
+| macOS (`darwin`) | `arm64` | Optimized scalar assembly | Dedicated SHA-1 instructions on Apple Silicon |
+| Linux | `amd64` | Optimized scalar assembly | AVX2 when available; otherwise scalar assembly |
+| Linux | `arm64` | Optimized scalar assembly | Dedicated SHA-1 instructions when available; otherwise generic Go implementation |
+| Windows | `amd64` | Optimized scalar assembly | AVX2 when available; otherwise scalar assembly |
+| Windows | `arm64` | Optimized scalar assembly | Generic Go implementation, even if the CPU has SHA-1 instructions |
+
+The SHA-1 AVX2 path requires AVX2, BMI1, and BMI2 CPU support; short inputs
+and remaining blocks use scalar assembly. Go 1.20's MD5 implementation
+does not use AVX2, and its SHA-1 implementation does not use the dedicated
+x86 SHA extensions.
+
+When the first nonempty checksum is absent or has an unrecognized length,
+auto selection follows these implementations:
+
+- On macOS, Linux, and Windows `amd64`, use SHA-1 when AVX2, BMI1, and BMI2
+  are all available; otherwise use MD5. Dedicated x86 SHA instructions
+  are not required and do not affect this choice.
+- On macOS and Linux `arm64`, use SHA-1 when SHA-1 instructions are
+  available to Go; otherwise use MD5.
+- On Windows `arm64`, use MD5 because Go 1.20's SHA-1 implementation is
+  generic, even on CPUs with SHA-1 instructions.
+
+CPU features disabled through `GODEBUG` are treated as unavailable.
+Auto mode logs the platform and the available implementation that led
+to its choice. Recognized saved checksum lengths still take precedence.
+
 # The database file
 
 The schema of the database is simple. Each file has 4 columns -- `path`,
@@ -140,7 +206,7 @@ Positional Arguments:
 
   <rootdir>
     	The root folder to calculate the checksums. For each subfile, the
-    	path relative to <rootdir>, the size, and the md5 checksum will be
+      path relative to <rootdir>, the size, and the checksum will be
     	stored into <dbfile>. <rootdir> must be a folder.
 
   <prefix>
@@ -160,6 +226,17 @@ Positional Arguments:
 
 Options:
 
+  -checksum string
+        Choose auto, sha1, or md5. Auto uses the first nonempty saved
+        checksum's length (32 for md5, 40 for sha1). If absent or unknown,
+        choose sha1 on amd64 with AVX2 + BMI1 + BMI2, or supported arm64
+        OSes with SHA-1 instructions. Otherwise use md5, including on
+        Windows arm64 where Go 1.20 uses generic SHA-1.
+        Auto logs the chosen algorithm and reason. If a manually
+        specified algorithm differs from the saved checksums, they are
+        treated as checksum mismatches and produce 'changed' entries.
+        Ignored with -sizeonly.
+         (default "auto")
   -dbfile string
     	Set database file name. If it doesn't contain any '/', the file
     	will be put into <rootdir> and will be automatically added to the
