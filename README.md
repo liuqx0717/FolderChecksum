@@ -224,25 +224,25 @@ Usage:
 Positional Arguments:
 
   <rootdir>
-    	The root folder to calculate the checksums. For each subfile, the
-      path relative to <rootdir>, the size, and the checksum will be
-    	stored into <dbfile>. <rootdir> must be a folder.
+        The root folder to calculate the checksums. For each subfile, the
+        path relative to <rootdir>, the size, and the checksum will be
+        stored into <dbfile>. <rootdir> must be a folder.
 
   <prefix>
-    	Only process some of the files in <rootdir> whose relative path
-    	starts with <prefix>. If multiple <prefix> are specified, the
-    	user must make sure they are not overlapping with each other,
-    	otherwise some assertions will be triggered. E.g., a/b and a/b/c
-    	are overlapping, but a/b/c and a/b/d are not. Slash (/) should
-    	always be used as the path separator in <prefix>, even on Windows.
-    	For each specified <prefix>, the tool will perform:
-    	  1. Clean the path to the shortest form.
-    	  2. In the filesystem, recursively scan the entire subfolder if
-    	     it's a folder, or scan the single file if it's a file. If it
-    	     doesn't exist, go to step 3 directly.
-    	  3. In the database, check the single entry '<prefix>' and all
-    	     the entries that start with '<prefix>/' to detect deleted files
-    	     (which were not visited in step 2).
+        Only process some of the files in <rootdir> whose relative path
+        starts with <prefix>. If multiple <prefix> are specified, the
+        user must make sure they are not overlapping with each other,
+        otherwise some assertions will be triggered. E.g., a/b and a/b/c
+        are overlapping, but a/b/c and a/b/d are not. Slash (/) should
+        always be used as the path separator in <prefix>, even on Windows.
+        For each specified <prefix>, the tool will perform:
+          1. Clean the path to the shortest form.
+          2. In the filesystem, recursively scan the entire subfolder if
+             it's a folder, or scan the single file if it's a file. If it
+             doesn't exist, go to step 3 directly.
+          3. In the database, check the single entry '<prefix>' and all
+             the entries that start with '<prefix>/' to detect deleted files
+             (which were not visited in step 2).
 
 Options:
 
@@ -258,51 +258,53 @@ Options:
         Ignored with -sizeonly.
          (default "auto")
   -dbfile string
-    	Set database file name. If it doesn't contain any '/', the file
-    	will be put into <rootdir> and will be automatically added to the
-    	<exclude> list. If it contains at least one '/', the file will be
-    	located using the path (for absolute paths) or current working
-    	directory (for relative paths).
-    	 (default ".checksum.db")
-  -exclude value
-    	Append a regex pattern to the <exclude> list. This option may be
-    	repeated. Previously recorded files that are now excluded will
-    	also be reported as deleted. See Pattern Matching section for
-    	more details.
+        Set database file name. If it doesn't contain any '/', the file
+        will be put into <rootdir> and will be automatically added to the
+        <exclude> list. If it contains at least one '/', the file will be
+        located using the path (for absolute paths) or current working
+        directory (for relative paths).
+         (default ".checksum.db")
+  -exclude string
+        Append a regex pattern string to the <exclude> list. This option
+        may be repeated. See Pattern Matching section for more details.
   -followlinks
         Follow symlinks encountered during traversal (skipped by default).
         Resolve chains to their final target; scan linked folders
         recursively. Broken links or link/directory cycles stop the scan
         with an error. Symlinks in <rootdir> and <prefix> are always
         resolved normally.
-  -include value
-    	Append a regex pattern to the <include> list. This option may be
-    	repeated. See Pattern Matching section for more details.
+  -include string
+        Append a regex pattern string to the <include> list. This option
+        may be repeated. See Pattern Matching section for more details.
   -j int
-    	Set the number of workers to parallelly read the files. For SSD
-    	only. Use 1 if <rootdir> is on a HDD.
-    	 (default 16)
+        Set the number of workers to parallelly read the files. For SSD
+        only. Use 1 if <rootdir> is on a HDD.
+         (default 16)
   -loglevel int
-    	Set log level (ERROR=0, WARNING=1, INFO=2, DEBUG=3). Logs greater
-    	than or equal to this level will be printed to stderr.
-    	 (default 2)
+        Set log level (ERROR=0, WARNING=1, INFO=2, DEBUG=3). Logs greater
+        than or equal to this level will be printed to stderr.
+         (default 2)
   -sizeonly
-    	Detect changes only by checking file sizes (instead of checksums).
+        Detect changes only by checking file sizes (instead of checksums).
   -update
-    	Update the <dbfile>. By default this tool only compares current
-    	<rootdir> against <dbfile> without modifying <dbfile>.
+        Update the <dbfile>. By default this tool only compares current
+        <rootdir> against <dbfile> without modifying <dbfile>.
   -version
-    	Display version number and exit.
-    	
+        Display version number and exit.
+
 Pattern Matching:
 
   Use -exclude (or -include) to append a regex pattern to <exlude> (or
   <include>) list. Repeat them to add multiple patterns.
 
+  Regex patterns are case-sensitive by default; an explicit '(?i)' enables
+  case-insensitive pattern matching.
+
   The files that match any of the patterns in <exclude> list AND match
   none of the patterns in <include> list, will be excluded; otherwise
   they will be included. Excluded files will be treated as if they don't
-  exist in the folder.
+  exist in the folder. Previously recorded files that are now excluded
+  will also be reported as deleted.
 
   The file paths relative to <rootdir> are matched against the patterns.
   For example, suppose <rootdir> is /path/to/dir which contains:

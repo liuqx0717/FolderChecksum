@@ -80,38 +80,47 @@ func init() {
 		fmt.Fprintln(w, "Positional Arguments:")
 		fmt.Fprintln(w, "")
 		fmt.Fprintln(w, "  <rootdir>")
-		fmt.Fprintln(w, "    \tThe root folder to calculate the checksums. For each subfile, the")
-		fmt.Fprintln(w, "    \tpath relative to <rootdir>, the size, and the checksum will be")
-		fmt.Fprintln(w, "    \tstored into <dbfile>. <rootdir> must be a folder.")
+		fmt.Fprintln(w, "        The root folder to calculate the checksums. For each subfile, the")
+		fmt.Fprintln(w, "        path relative to <rootdir>, the size, and the checksum will be")
+		fmt.Fprintln(w, "        stored into <dbfile>. <rootdir> must be a folder.")
 		fmt.Fprintln(w, "")
 		fmt.Fprintln(w, "  <prefix>")
-		fmt.Fprintln(w, "    \tOnly process some of the files in <rootdir> whose relative path")
-		fmt.Fprintln(w, "    \tstarts with <prefix>. If multiple <prefix> are specified, the")
-		fmt.Fprintln(w, "    \tuser must make sure they are not overlapping with each other,")
-		fmt.Fprintln(w, "    \totherwise some assertions will be triggered. E.g., a/b and a/b/c")
-		fmt.Fprintln(w, "    \tare overlapping, but a/b/c and a/b/d are not. Slash (/) should")
-		fmt.Fprintln(w, "    \talways be used as the path separator in <prefix>, even on Windows.")
-		fmt.Fprintln(w, "    \tFor each specified <prefix>, the tool will perform:")
-		fmt.Fprintln(w, "    \t  1. Clean the path to the shortest form.")
-		fmt.Fprintln(w, "    \t  2. In the filesystem, recursively scan the entire subfolder if")
-		fmt.Fprintln(w, "    \t     it's a folder, or scan the single file if it's a file. If it")
-		fmt.Fprintln(w, "    \t     doesn't exist, go to step 3 directly.")
-		fmt.Fprintln(w, "    \t  3. In the database, check the single entry '<prefix>' and all")
-		fmt.Fprintln(w, "    \t     the entries that start with '<prefix>/' to detect deleted files")
-		fmt.Fprintln(w, "    \t     (which were not visited in step 2).")
+		fmt.Fprintln(w, "        Only process some of the files in <rootdir> whose relative path")
+		fmt.Fprintln(w, "        starts with <prefix>. If multiple <prefix> are specified, the")
+		fmt.Fprintln(w, "        user must make sure they are not overlapping with each other,")
+		fmt.Fprintln(w, "        otherwise some assertions will be triggered. E.g., a/b and a/b/c")
+		fmt.Fprintln(w, "        are overlapping, but a/b/c and a/b/d are not. Slash (/) should")
+		fmt.Fprintln(w, "        always be used as the path separator in <prefix>, even on Windows.")
+		fmt.Fprintln(w, "        For each specified <prefix>, the tool will perform:")
+		fmt.Fprintln(w, "          1. Clean the path to the shortest form.")
+		fmt.Fprintln(w, "          2. In the filesystem, recursively scan the entire subfolder if")
+		fmt.Fprintln(w, "             it's a folder, or scan the single file if it's a file. If it")
+		fmt.Fprintln(w, "             doesn't exist, go to step 3 directly.")
+		fmt.Fprintln(w, "          3. In the database, check the single entry '<prefix>' and all")
+		fmt.Fprintln(w, "             the entries that start with '<prefix>/' to detect deleted files")
+		fmt.Fprintln(w, "             (which were not visited in step 2).")
 		fmt.Fprintln(w, "")
 		fmt.Fprintln(w, "Options:")
 		fmt.Fprintln(w, "")
+		// The standard flag formatter places indentation tabs at column four.
+		var defaults strings.Builder
+		flag.CommandLine.SetOutput(&defaults)
 		flag.PrintDefaults()
+		flag.CommandLine.SetOutput(w)
+		fmt.Fprint(w, strings.ReplaceAll(defaults.String(), "\t", "    "))
 		fmt.Fprintln(w, "Pattern Matching:")
 		fmt.Fprintln(w, "")
 		fmt.Fprintln(w, "  Use -exclude (or -include) to append a regex pattern to <exlude> (or")
 		fmt.Fprintln(w, "  <include>) list. Repeat them to add multiple patterns.")
 		fmt.Fprintln(w, "")
+		fmt.Fprintln(w, "  Regex patterns are case-sensitive by default; an explicit '(?i)' enables")
+		fmt.Fprintln(w, "  case-insensitive pattern matching.")
+		fmt.Fprintln(w, "")
 		fmt.Fprintln(w, "  The files that match any of the patterns in <exclude> list AND match")
 		fmt.Fprintln(w, "  none of the patterns in <include> list, will be excluded; otherwise")
 		fmt.Fprintln(w, "  they will be included. Excluded files will be treated as if they don't")
-		fmt.Fprintln(w, "  exist in the folder.")
+		fmt.Fprintln(w, "  exist in the folder. Previously recorded files that are now excluded")
+		fmt.Fprintln(w, "  will also be reported as deleted.")
 		fmt.Fprintln(w, "")
 		fmt.Fprintln(w, "  The file paths relative to <rootdir> are matched against the patterns.")
 		fmt.Fprintln(w, "  For example, suppose <rootdir> is /path/to/dir which contains:")
@@ -154,13 +163,11 @@ func init() {
 			"located using the path (for absolute paths) or current working\n"+
 			"directory (for relative paths).\n")
 	flag.Var(&flg.excludeList, "exclude",
-		"Append a regex pattern to the <exclude> list. This option may be\n"+
-			"repeated. Previously recorded files that are now excluded will\n"+
-			"also be reported as deleted. See Pattern Matching section for\n"+
-			"more details.")
+		"Append a regex pattern `string` to the <exclude> list. This option\n"+
+			"may be repeated. See Pattern Matching section for more details.")
 	flag.Var(&flg.includeList, "include",
-		"Append a regex pattern to the <include> list. This option may be\n"+
-			"repeated. See Pattern Matching section for more details.")
+		"Append a regex pattern `string` to the <include> list. This option\n"+
+			"may be repeated. See Pattern Matching section for more details.")
 	flag.BoolVar(&flg.followLinks, "followlinks", false,
 		"Follow symlinks encountered during traversal (skipped by default).\n"+
 			"Resolve chains to their final target; scan linked folders\n"+
