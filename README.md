@@ -4,21 +4,34 @@ This tool saves the current information of a folder to a database file.
 Later the database file can be used to track the changes in that folder.
 Metadata changes (modify/access time, permissions, etc) are ignored.
 
-Path comparisons are always case-sensitive, even on case-insensitive filesystems.
-Use the exact on-disk casing for `<prefix>` and `<dbfile>`.
+## Usage
+
+```
+    FolderChecksum [OPTIONS] <rootdir> [<prefix>...]
+```
+
+The list of new/changed/deleted files are written to `stdout`. The logs 
+are written to `stderr`.
+
+When `-update` is **not** used, this tool compares the content of the folder
+with the database file (by default `<rootdir>/.checksum.db`), then outputs
+the list of new/changed/deleted files.
+
+When `-update` is used, this tool outputs the list of new/changed/deleted
+files and updates the database file with the current content of the folder.
+
+Path comparisons are **always case-sensitive**, even on case-insensitive
+filesystems. Use the exact on-disk casing for `<prefix>` and `<dbfile>`.
 
 Regex patterns are case-sensitive by default; an explicit `(?i)` enables
 case-insensitive pattern matching.
 
 Always use slash (`/`) as the path separator in `<prefix>`, even on Windows.
 
-Usage:
+By default this tool uses multiple threads to read the files. Please use
+`-j 1` when scanning a folder on HDD.
 
-```
-    FolderChecksum [OPTIONS] <rootdir> [<prefix>...]
-```
-
-For example:
+## Example
 
 Create a database file for this repo.
 
@@ -77,18 +90,6 @@ By default the database file `.checksum.db` is located under the specified
 folder. So in the example above, the tool is using `.checksum.db` created
 in this repo.
 
-The list of new/changed/deleted files are written to `stdout`. The logs 
-are written to `stderr`.
-
-When `-update` is *not* used, this tool compares the content of the folder
-with the database file, then outputs the list of new/changed/deleted files.
-
-When `-update` is used, this tool outputs the list of new/changed/deleted
-files and updates the database file with the current content of the folder.
-
-By default this tool uses multiple threads to read the files. Please use
-`-j 1` when scanning a folder on HDD.
-
 # Symbolic links
 
 Symlinks in `<rootdir>` and an explicitly selected `<prefix>` are always
@@ -107,8 +108,7 @@ If traversal follows a broken link or enters a cycle, the scan stops with
 an error and a nonzero exit status. This includes a link pointing to itself,
 chains such as `a -> b -> a`, and directory links that lead back to a
 directory already in the current traversal path (for example,
-`subdir/back -> ..`). Multiple links to the same target in separate
-branches are allowed and scanned independently; they are not cycles.
+`subdir/back -> ..`).
 
 # Checksum algorithm
 
@@ -119,6 +119,9 @@ is `auto`:
   nonempty checksum returned by the database: 32 hexadecimal characters
   means MD5, and 40 means SHA-1. Entries with NULL or empty checksums are
   skipped, and selection stops as soon as a nonempty checksum is found.
+  In a database containing both MD5 and SHA-1 checksums (caused by `-update`
+  on a subfile/subfolder with a different algorithm), files saved with the
+  other algorithm produce `changed` entries when compared.
 - If there are no saved checksums (including a database created with
   `-sizeonly`), or the first nonempty checksum has an unrecognized length,
   choose based on the OS, architecture, and CPU features that Go 1.20's
@@ -129,20 +132,17 @@ is `auto`:
 Manually specifying `-checksum sha1` or `-checksum md5` always uses that
 algorithm. If saved checksums use a different algorithm, they are treated
 as checksum mismatches and produce `changed` entries, even when the file
-contents have not changed. With `-update`, the processed entries are saved
-using the selected algorithm. Without `-update`, the saved checksums are
-left unchanged.
+contents have not changed.
 
-Auto mode does not inspect the remaining checksums when selecting an
-algorithm. In a database containing both MD5 and SHA-1 checksums, the
-first nonempty checksum determines the algorithm; files saved with the
-other algorithm produce `changed` entries when compared. If that first
-checksum has an unrecognized length, use the same platform selection as
-for a database with no saved checksums. The log includes the unrecognized
-length and the reason for the chosen algorithm. Such saved checksums are
-treated as mismatches and produce `changed` entries when compared.
+Checksums are calculated only when necessary: when `-update` is *not*
+used, the tool avoids reading file contents if a checksum is not needed
+to determine the result:
+- if the database has no record for the file's relative path (reported as
+  `new`), or
+- if the file's size differs from the stored size (reported as `changed`).
 
-`-sizeonly` ignores checksum and only compares file sizes.
+`-sizeonly` skips all checksum calculation, with or without `-update`,
+and only compares file sizes.
 
 Hashing uses Go's standard library. The table below describes normal
 Go 1.20 builds for the six supported release targets:
@@ -173,8 +173,6 @@ auto selection follows these implementations:
   generic, even on CPUs with SHA-1 instructions.
 
 CPU features disabled through `GODEBUG` are treated as unavailable.
-Auto mode logs the platform and the available implementation that led
-to its choice. Recognized saved checksum lengths still take precedence.
 
 # The database file
 
@@ -197,7 +195,7 @@ file generated on one platform can be used later on different platforms.
 
 The database is always updated in a single transaction, i.e., updated
 atomically in each invocation of the tool. Running multiple instances of
-this tool on the same database file is **not** recommended (SQLite only
+this tool on the same database file is **NOT** recommended (SQLite only
 supports 1 concurrent write transaction anyway).
 
 # Full usage
