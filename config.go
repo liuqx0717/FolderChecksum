@@ -162,9 +162,11 @@ func init() {
 		"Append a regex pattern to the <include> list. This option may be\n"+
 			"repeated. See Pattern Matching section for more details.")
 	flag.BoolVar(&flg.followLinks, "followlinks", false,
-		"Follow symlinks as if the targets themselves are in the folder (\n"+
-			"fail on broken links). By default symlinks in <rootdir> and <prefix>\n"+
-			"are followed and others are skipped.")
+		"Follow symlinks encountered during traversal (skipped by default).\n"+
+			"Resolve chains to their final target; scan linked folders\n"+
+			"recursively. Broken links or link/directory cycles stop the scan\n"+
+			"with an error. Symlinks in <rootdir> and <prefix> are always\n"+
+			"resolved normally.")
 	flag.BoolVar(&flg.sizeOnly, "sizeonly", false,
 		"Detect changes only by checking file sizes (instead of checksums).")
 	flag.BoolVar(&flg.update, "update", false,

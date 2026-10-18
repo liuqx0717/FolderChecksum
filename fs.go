@@ -51,14 +51,12 @@ func dirMustExist(path string) {
 // rootDir must be an existing directory. If prefix doesn't exist,
 // this function will return (without failing).
 //
-// By default symlinks in rootDir and prefix are followed and others
-// are skipped. When followSymLinks is true, follow all the links.
+// Symlinks in rootDir and prefix are resolved normally to reach the starting
+// path. Symlinks encountered during traversal are skipped unless followLinks
+// is true; following a broken link or directory cycle fails the scan.
+// Report paths through the link, not the target.
 func mustWalkDir(rootDir string, prefix string, followLinks bool,
 	procOneFile func(relPath string, size int64)) {
-	if followLinks {
-		logFatal("followSymLinks not implemented")
-	}
-
 	dirMustExist(rootDir)
 
 	// If prefix contains '..', the result of path.Clean() could be
@@ -72,32 +70,62 @@ func mustWalkDir(rootDir string, prefix string, followLinks bool,
 		rootDir, prefix, prefixArg)
 
 	fsys := os.DirFS(rootDir)
-	fs.WalkDir(fsys, prefixArg,
-		func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				if d == nil && (os.IsNotExist(err) || errors.Is(err, syscall.ENOTDIR)) {
-					// A missing prefix (including a regular-file ancestor) is allowed
-					// so its old records can be deleted.
-					logWarning("Failed to stat prefix '%s', skipped", path)
-					return nil
-				}
-				// Other stat or ReadDir errors must not look like deleted files.
-				logFatal("Failed to walk '%s': %s", path, err.Error())
-			}
-			isDir := d.IsDir()
-			mode := d.Type()
-			info, err := d.Info()
-			if err != nil {
-				logFatal("Failed to stat '%s': %s", path, err.Error())
-			}
-			logDebug("Found path=%s, isDir=%v, isSpecial=%v",
-				path, isDir, isSpecialFile(mode))
+	// Resolve the explicitly selected starting path regardless of followLinks.
+	info, err := fs.Stat(fsys, prefixArg)
+	if err != nil {
+		if os.IsNotExist(err) || errors.Is(err, syscall.ENOTDIR) {
+			// A missing prefix (including a regular-file ancestor) is allowed
+			// so its old records can be deleted.
+			logWarning("Failed to stat prefix '%s', skipped", prefixArg)
+			return
+		}
+		logFatal("Failed to walk '%s': %s", prefixArg, err.Error())
+	}
 
-			if !isDir && !isSpecialFile(mode) {
-				procOneFile(path, info.Size())
+	var walk func(string, fs.FileInfo, []fs.FileInfo)
+	walk = func(relPath string, info fs.FileInfo, ancestors []fs.FileInfo) {
+		if followLinks && info.Mode()&fs.ModeSymlink != 0 {
+			var err error
+			info, err = fs.Stat(fsys, relPath)
+			if err != nil {
+				logFatal("Failed to follow symlink '%s': %s", relPath, err.Error())
 			}
-			return nil
-		})
+		}
+		logDebug("Found path=%s, isDir=%v, isSpecial=%v",
+			relPath, info.IsDir(), isSpecialFile(info.Mode()))
+
+		if !info.IsDir() {
+			if !isSpecialFile(info.Mode()) {
+				procOneFile(relPath, info.Size())
+			}
+			return
+		}
+		if followLinks {
+			// Track only the current ancestry: separate aliases of the same
+			// directory must each be visited under their own relative paths.
+			for _, ancestor := range ancestors {
+				if os.SameFile(info, ancestor) {
+					logFatal("Directory cycle at '%s'", relPath)
+				}
+			}
+			ancestors = append(ancestors, info)
+		}
+
+		// ReadDir preserves the lexical order used by fs.WalkDir.
+		entries, err := fs.ReadDir(fsys, relPath)
+		if err != nil {
+			logFatal("Failed to walk '%s': %s", relPath, err.Error())
+		}
+		for _, entry := range entries {
+			childPath := path.Join(relPath, entry.Name())
+			childInfo, err := entry.Info()
+			if err != nil {
+				logFatal("Failed to stat '%s': %s", childPath, err.Error())
+			}
+			walk(childPath, childInfo, ancestors)
+		}
+	}
+	walk(prefixArg, info, nil)
 }
 
 // Return the hexadecimal checksum and number of bytes read.

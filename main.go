@@ -16,9 +16,6 @@ func main() {
 	}
 	parsePositionalArgs()
 	cfg := flagsToConfig(&flg)
-	if cfg.followLinks {
-		logFatal("Option not implemented")
-	}
 	logInfo("Using database file: %s", cfg.dbFile)
 	mustCreateFilesTableIfNeeded(cfg.db)
 	mustSelectChecksum(cfg)

@@ -89,6 +89,27 @@ files and updates the database file with the current content of the folder.
 By default this tool uses multiple threads to read the files. Please use
 `-j 1` when scanning a folder on HDD.
 
+# Symbolic links
+
+Symlinks in `<rootdir>` and an explicitly selected `<prefix>` are always
+resolved normally to reach the starting file or folder. The `-followlinks`
+flag only controls symlinks encountered while traversing that starting
+folder: they are skipped by default; when `-followlinks` is specified they
+are followed (as if the target file/folder itself sits there).
+
+When following a symlink that points to another symlink, the chain is
+resolved to its final target. For example, `a -> b -> file` makes `a` behave
+like `file`; if the final target is a folder, its contents are scanned
+recursively. The operating system's link-resolution limits still apply,
+so an excessively long chain can fail even if it has no cycle.
+
+If traversal follows a broken link or enters a cycle, the scan stops with
+an error and a nonzero exit status. This includes a link pointing to itself,
+chains such as `a -> b -> a`, and directory links that lead back to a
+directory already in the current traversal path (for example,
+`subdir/back -> ..`). Multiple links to the same target in separate
+branches are allowed and scanned independently; they are not cycles.
+
 # Checksum algorithm
 
 Use `-checksum auto|sha1|md5` to select the checksum algorithm. The default
@@ -251,9 +272,11 @@ Options:
     	also be reported as deleted. See Pattern Matching section for
     	more details.
   -followlinks
-    	Follow symlinks as if the targets themselves are in the folder (
-    	fail on broken links). By default symlinks in <rootdir> and <prefix>
-    	are followed and others are skipped.
+        Follow symlinks encountered during traversal (skipped by default).
+        Resolve chains to their final target; scan linked folders
+        recursively. Broken links or link/directory cycles stop the scan
+        with an error. Symlinks in <rootdir> and <prefix> are always
+        resolved normally.
   -include value
     	Append a regex pattern to the <include> list. This option may be
     	repeated. See Pattern Matching section for more details.

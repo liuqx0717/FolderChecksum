@@ -294,7 +294,8 @@ func TestWalkDirRejectsStatErrors(t *testing.T) {
 	//     death test using that root and FOLDERCHECKSUM_TEST_WALK_PREFIX.
 	if rootDir := os.Getenv("FOLDERCHECKSUM_TEST_WALK_ROOT"); rootDir != "" {
 		// Child process: the walk should terminate this process via logFatal.
-		mustWalkDir(rootDir, os.Getenv("FOLDERCHECKSUM_TEST_WALK_PREFIX"), false,
+		mustWalkDir(rootDir, os.Getenv("FOLDERCHECKSUM_TEST_WALK_PREFIX"),
+			os.Getenv("FOLDERCHECKSUM_TEST_WALK_FOLLOWLINKS") == "1",
 			func(relPath string, size int64) {
 				t.Fatalf("unexpected file: %s", relPath)
 			})
@@ -349,17 +350,22 @@ func TestWalkDirRejectsStatErrors(t *testing.T) {
 			// Re-run only this test in a new instance of the current test binary.
 			// The environment variables select the child branch above and pass
 			// the fixture paths, preventing the child from spawning more tests.
-			cmd := exec.Command(os.Args[0], "-test.run=^TestWalkDirRejectsStatErrors$")
-			cmd.Env = append(os.Environ(),
-				"FOLDERCHECKSUM_TEST_WALK_ROOT="+rootDir,
-				"FOLDERCHECKSUM_TEST_WALK_PREFIX="+prefix)
-			output, err := cmd.CombinedOutput()
-			if err == nil {
-				t.Fatalf("walk succeeded despite stat failure:\n%s", output)
-			}
-			exitErr, ok := err.(*exec.ExitError)
-			if !ok || exitErr.ExitCode() != 1 || !strings.Contains(string(output), "[ERROR] Failed to walk") {
-				t.Fatalf("expected fatal walk error, got %v:\n%s", err, output)
+			for _, followLinks := range []string{"0", "1"} {
+				t.Run("followlinks="+followLinks, func(t *testing.T) {
+					cmd := exec.Command(os.Args[0], "-test.run=^TestWalkDirRejectsStatErrors$")
+					cmd.Env = append(os.Environ(),
+						"FOLDERCHECKSUM_TEST_WALK_ROOT="+rootDir,
+						"FOLDERCHECKSUM_TEST_WALK_PREFIX="+prefix,
+						"FOLDERCHECKSUM_TEST_WALK_FOLLOWLINKS="+followLinks)
+					output, err := cmd.CombinedOutput()
+					if err == nil {
+						t.Fatalf("walk succeeded despite stat failure:\n%s", output)
+					}
+					exitErr, ok := err.(*exec.ExitError)
+					if !ok || exitErr.ExitCode() != 1 || !strings.Contains(string(output), "[ERROR] Failed to walk") {
+						t.Fatalf("expected fatal walk error, got %v:\n%s", err, output)
+					}
+				})
 			}
 		})
 	}
