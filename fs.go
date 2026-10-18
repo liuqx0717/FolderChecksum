@@ -122,6 +122,9 @@ func mustWalkDir(rootDir string, prefix string, followLinks bool,
 			if err != nil {
 				logFatal("Failed to stat '%s': %s", childPath, err.Error())
 			}
+			// ancestors is passed by value, so each call has its own slice
+			// header. Appending does not change the caller's slice length,
+			// so no explicit pop is needed when the call returns.
 			walk(childPath, childInfo, ancestors)
 		}
 	}

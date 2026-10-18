@@ -174,41 +174,42 @@ func TestWalkDirFollowLinksRejectsBrokenLinksAndCycles(t *testing.T) {
 	}
 
 	tests := []struct {
-		name    string
-		prepare func(*testing.T, string) string
+		name      string
+		wantError string
+		prepare   func(*testing.T, string) string
 	}{
-		{"broken encountered link", func(t *testing.T, rootDir string) string {
+		{"broken encountered link", "Failed to follow symlink 'broken':", func(t *testing.T, rootDir string) string {
 			testWalkSymlink(t, "missing", filepath.Join(rootDir, "broken"))
 			return ""
 		}},
-		{"link target has regular file ancestor", func(t *testing.T, rootDir string) string {
+		{"link target has regular file ancestor", "Failed to follow symlink 'broken':", func(t *testing.T, rootDir string) string {
 			if err := os.WriteFile(filepath.Join(rootDir, "file"), nil, 0600); err != nil {
 				t.Fatal(err)
 			}
 			testWalkSymlink(t, "file/child", filepath.Join(rootDir, "broken"))
 			return ""
 		}},
-		{"self link", func(t *testing.T, rootDir string) string {
+		{"self link", "Failed to follow symlink 'loop':", func(t *testing.T, rootDir string) string {
 			testWalkSymlink(t, "loop", filepath.Join(rootDir, "loop"))
 			return ""
 		}},
-		{"link chain cycle", func(t *testing.T, rootDir string) string {
+		{"link chain cycle", "Failed to follow symlink 'first':", func(t *testing.T, rootDir string) string {
 			testWalkSymlink(t, "second", filepath.Join(rootDir, "first"))
 			testWalkSymlink(t, "first", filepath.Join(rootDir, "second"))
 			return ""
 		}},
-		{"directory to itself", func(t *testing.T, rootDir string) string {
+		{"directory to itself", "Directory cycle at 'loop'", func(t *testing.T, rootDir string) string {
 			testWalkSymlink(t, ".", filepath.Join(rootDir, "loop"))
 			return ""
 		}},
-		{"directory to ancestor", func(t *testing.T, rootDir string) string {
+		{"directory to ancestor", "Directory cycle at 'child/parent'", func(t *testing.T, rootDir string) string {
 			if err := os.Mkdir(filepath.Join(rootDir, "child"), 0755); err != nil {
 				t.Fatal(err)
 			}
 			testWalkSymlink(t, "..", filepath.Join(rootDir, "child", "parent"))
 			return ""
 		}},
-		{"two directory cycle", func(t *testing.T, rootDir string) string {
+		{"two directory cycle", "Directory cycle at 'first/next/next'", func(t *testing.T, rootDir string) string {
 			for _, name := range []string{"first", "second"} {
 				if err := os.Mkdir(filepath.Join(rootDir, name), 0755); err != nil {
 					t.Fatal(err)
@@ -233,8 +234,13 @@ func TestWalkDirFollowLinksRejectsBrokenLinksAndCycles(t *testing.T) {
 				t.Fatalf("walk did not reject the broken link or cycle before timeout: %v\n%s", ctx.Err(), output)
 			}
 			exitErr, ok := err.(*exec.ExitError)
-			if !ok || exitErr.ExitCode() != 1 || !strings.Contains(string(output), "[ERROR]") {
+			if !ok || exitErr.ExitCode() != 1 {
 				t.Fatalf("expected fatal walk error, got %v:\n%s", err, output)
+			}
+			// Directory cycles must be caught at the first repeated directory,
+			// before the OS rejects an ever-growing path of symlinks.
+			if !strings.Contains(string(output), "[ERROR] "+tt.wantError) {
+				t.Fatalf("expected error %q, got:\n%s", tt.wantError, output)
 			}
 		})
 	}
