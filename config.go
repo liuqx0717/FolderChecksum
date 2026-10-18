@@ -97,7 +97,8 @@ func init() {
 		fmt.Fprintln(w, "    \t     it's a folder, or scan the single file if it's a file. If it")
 		fmt.Fprintln(w, "    \t     doesn't exist, go to step 3 directly.")
 		fmt.Fprintln(w, "    \t  3. In the database, check the single entry '<prefix>' and all")
-		fmt.Fprintln(w, "    \t     the entries that start with '<prefix>/'.")
+		fmt.Fprintln(w, "    \t     the entries that start with '<prefix>/' to detect deleted files")
+		fmt.Fprintln(w, "    \t     (which were not visited in step 2).")
 		fmt.Fprintln(w, "")
 		fmt.Fprintln(w, "Options:")
 		fmt.Fprintln(w, "")
@@ -154,7 +155,9 @@ func init() {
 			"directory (for relative paths).\n")
 	flag.Var(&flg.excludeList, "exclude",
 		"Append a regex pattern to the <exclude> list. This option may be\n"+
-			"repeated. See Pattern Matching section for more details.")
+			"repeated. Previously recorded files that are now excluded will\n"+
+			"also be reported as deleted. See Pattern Matching section for\n"+
+			"more details.")
 	flag.Var(&flg.includeList, "include",
 		"Append a regex pattern to the <include> list. This option may be\n"+
 			"repeated. See Pattern Matching section for more details.")

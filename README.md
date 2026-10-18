@@ -222,7 +222,8 @@ Positional Arguments:
     	     it's a folder, or scan the single file if it's a file. If it
     	     doesn't exist, go to step 3 directly.
     	  3. In the database, check the single entry '<prefix>' and all
-    	     the entries that start with '<prefix>/'.
+    	     the entries that start with '<prefix>/' to detect deleted files
+    	     (which were not visited in step 2).
 
 Options:
 
@@ -246,7 +247,9 @@ Options:
     	 (default ".checksum.db")
   -exclude value
     	Append a regex pattern to the <exclude> list. This option may be
-    	repeated. See Pattern Matching section for more details.
+    	repeated. Previously recorded files that are now excluded will
+    	also be reported as deleted. See Pattern Matching section for
+    	more details.
   -followlinks
     	Follow symlinks as if the targets themselves are in the folder (
     	fail on broken links). By default symlinks in <rootdir> and <prefix>
@@ -358,9 +361,9 @@ The Windows arm64 target above uses the macOS universal package from
 
 The Windows amd64 target uses `llvm-mingw-msvcrt` -- a separate copy
 of LLVM-MinGW with its Windows amd64 C runtime rebuilt for MSVCRT and
-Windows 7; it is not included in the UCRT download. The amd64 executable
-uses Windows' built-in `msvcrt.dll`, so it does not require a UCRT
-installation. Keep Go 1.20 for Windows 7 support.
+Windows 7. The amd64 executable uses Windows' built-in `msvcrt.dll`,
+so it does not require a UCRT installation. Keep Go 1.20 for Windows 7
+support.
 
 ## Run all unit tests
 
